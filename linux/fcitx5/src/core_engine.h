@@ -77,7 +77,9 @@ public:
     void setLearning(bool on);
     void setLeftContext(const char *utf8); // nullptr for none
 
-    ShanjieRerankJob *takeJob();             // nullptr when there is none; the caller owns it
+    // The job the last change left, or nullptr; the caller owns it. The return code matters: 4 means
+    // the core has already discarded the composition (shanjie.h, rerank_take).
+    int32_t takeJob(ShanjieRerankJob **job);
     Result applyJob(ShanjieRerankJob *job);  // code 5: nothing changed. Does not free the job.
 
 private:

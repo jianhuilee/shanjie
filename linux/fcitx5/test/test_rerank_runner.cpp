@@ -45,7 +45,8 @@ static ShanjieRerankJob *jobAfterTyping(CoreEngine &e, const char *keys) {
         ShanjieKey k = *keys == ' ' ? ShanjieKey{KindSpace, 0, 0}
                                     : ShanjieKey{KindChar, static_cast<uint32_t>(*keys), 0};
         if (e.key(k).code != 0) break;
-        if (ShanjieRerankJob *j = e.takeJob()) {
+        ShanjieRerankJob *j = nullptr;
+        if (e.takeJob(&j) == 0 && j) {
             shanjie_rerank_free(last);
             last = j;
         }
@@ -94,6 +95,24 @@ int main() {
             pump.run();
             CHECK(delivered.empty());
             shanjie_rerank_free(got);
+        }
+        e.reset(1);
+
+        // One wait covers a stale job and the current one behind it: the newest job comes back, once.
+        ShanjieRerankJob *stale = jobAfterTyping(e, "rup wu0 wu0 fu4cp3cl3");
+        ShanjieRerankJob *current = jobAfterTyping(e, "su3cl3");
+        CHECK(stale != nullptr && current != nullptr && stale != current);
+        if (stale && current) {
+            runner.submit(stale);
+            runner.submit(current); // stale is running or was replaced in the queue
+            ShanjieRerankJob *got = runner.waitFor(5000ms);
+            CHECK(got == current);
+            pump.run(); // the posted completions find nothing left to deliver
+            CHECK(delivered.empty());
+            shanjie_rerank_free(got);
+        } else {
+            shanjie_rerank_free(stale);
+            shanjie_rerank_free(current);
         }
         e.reset(1);
 

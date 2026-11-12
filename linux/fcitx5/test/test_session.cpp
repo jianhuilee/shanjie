@@ -199,6 +199,23 @@ int main() {
         CHECK(c.commits.size() == 1 && c.preedit.empty());
     }
 
+    // A reset the application asks for while it keeps the focus: the composition is dropped for good.
+    {
+        FakeClient c;
+        press(s, c, {19, 22, 25, KSpace, 17, 22, 11, KSpace, 17, 22, 11, KSpace});
+        CHECK(!c.preedit.empty());
+        s.finish(c, false);
+        CHECK(c.commits.empty() && c.preedit.empty() && !c.candidatesVisible);
+        const int sets = c.preeditSets;
+        for (int i = 0; i < 60; i++) {
+            pump.run();
+            std::this_thread::sleep_for(5ms);
+        }
+        CHECK(c.preeditSets == sets && c.preedit.empty() && c.commits.empty());
+        press(s, c, {KS, KU, K3, KC, KL, K3, KEnter});
+        CHECK(c.commits.size() == 1 && c.commits[0] == kNihao); // nothing left over from before
+    }
+
     // The ETen layout after a settings change; an open composition is committed first.
     {
         FakeClient c;

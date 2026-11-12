@@ -42,6 +42,8 @@ public:
     // A click on candidate `index` of the list last shown to `client`.
     void pick(Client &client, uint32_t index);
     // Ends the composition if `client` owns it: commit sends what is shown, otherwise it is dropped.
+    // Also the answer to a reset the application asks for while it keeps the focus. Pending rerank jobs
+    // are cancelled, so a late result cannot bring the text back.
     void finish(Client &client, bool commit);
     // `client` is going away; drops a composition it owns.
     void clientDestroyed(Client &client);
@@ -62,6 +64,7 @@ private:
     Client *owner_ = nullptr;
     bool composing_ = false;
     uint32_t lastVertical_ = 0;
+    int32_t lastSelected_ = -1;
     // What the owner was last sent, to avoid resending an unchanged preedit.
     std::optional<std::tuple<std::string, size_t, size_t, size_t>> lastPreedit_;
 };

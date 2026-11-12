@@ -140,11 +140,10 @@ void CoreEngine::setLeftContext(const char *utf8) {
     if (engine_) shanjie_engine_set_left_context(engine_, utf8);
 }
 
-ShanjieRerankJob *CoreEngine::takeJob() {
-    if (!engine_) return nullptr;
-    ShanjieRerankJob *job = nullptr;
-    note("shanjie_engine_rerank_take", shanjie_engine_rerank_take(engine_, &job));
-    return job;
+int32_t CoreEngine::takeJob(ShanjieRerankJob **job) {
+    *job = nullptr;
+    if (!engine_) return 1;
+    return shanjie_engine_rerank_take(engine_, job);
 }
 
 Result CoreEngine::applyJob(ShanjieRerankJob *job) {

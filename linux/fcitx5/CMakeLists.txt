@@ -34,6 +34,38 @@ add_library(shanjie_shell STATIC
 target_include_directories(shanjie_shell PUBLIC src)
 target_link_libraries(shanjie_shell PUBLIC shanjie_core)
 
+# --- The fcitx5 addon
+find_package(Fcitx5Core 5.1 REQUIRED)
+add_library(shanjie MODULE
+    src/candidates.cpp
+    src/engine.cpp)
+target_link_libraries(shanjie PRIVATE shanjie_shell Fcitx5::Core)
+# Keep the Rust runtime's symbols out of the fcitx5 process's global namespace.
+target_link_options(shanjie PRIVATE -Wl,--exclude-libs,ALL)
+
+install(TARGETS shanjie DESTINATION "${FCITX_INSTALL_ADDONDIR}")
+install(FILES src/shanjie-addon.conf RENAME shanjie.conf DESTINATION "${FCITX_INSTALL_PKGDATADIR}/addon")
+install(FILES src/shanjie-im.conf RENAME shanjie.conf DESTINATION "${FCITX_INSTALL_PKGDATADIR}/inputmethod")
+
+# The files the core reads from its data directory (docs/spec/c-abi.md §8).
+set(LEXICON_FILES mcbpmf-data.txt overlay-add.tsv sandhi-add.tsv names-add.tsv variant-order.tsv
+    demote.tsv rerank-protect.tsv std-exempt.tsv digits.tsv mixed-words.tsv)
+list(TRANSFORM LEXICON_FILES PREPEND "${REPO_ROOT}/data/lexicon/")
+install(FILES ${LEXICON_FILES} DESTINATION "${FCITX_INSTALL_PKGDATADIR}/shanjie/lexicon")
+
+set(PACK_FILES acg-add.tsv quotes-add.tsv it-add.tsv meme-add.tsv beauty-add.tsv)
+list(TRANSFORM PACK_FILES PREPEND "${REPO_ROOT}/data/packs/")
+install(FILES ${PACK_FILES} DESTINATION "${FCITX_INSTALL_PKGDATADIR}/shanjie/packs")
+
+# Models are not in git. When they were downloaded into data/lm, install them too.
+set(MODEL_FILES bigram.sjlm classes.sjc kn.sjkn tinylm.sjtl trigram.sjt3 trigram-chat.sjt3 colloquial.sjlm)
+list(TRANSFORM MODEL_FILES PREPEND "${REPO_ROOT}/data/lm/")
+if(EXISTS "${REPO_ROOT}/data/lm/bigram.sjlm")
+    install(FILES ${MODEL_FILES} DESTINATION "${FCITX_INSTALL_PKGDATADIR}/shanjie/lm")
+else()
+    message(WARNING "data/lm/bigram.sjlm not found: models will not be installed (see CONTRIBUTING.md)")
+endif()
+
 # --- Tests
 enable_testing()
 set(TEST_DEFS
@@ -55,3 +87,4 @@ shanjie_test(test_keymap shanjie_shell)
 shanjie_test(test_core_engine shanjie_shell)
 shanjie_test(test_rerank_runner shanjie_shell)
 shanjie_test(test_session shanjie_shell)
+shanjie_test(test_fcitx_key shanjie_shell Fcitx5::Utils)

@@ -52,10 +52,14 @@ bool Session::handleKey(Client &client, const KeyInput &in) {
         const std::optional<std::string> left = client.leftContext();
         engine_.setLeftContext(left ? left->c_str() : nullptr);
     }
-    if (key->kind == KindEnter && composing_) {
-        // Let a running rerank catch up, so what is sent is what it would have shown.
-        if (ShanjieRerankJob *job = runner_->waitFor(std::chrono::milliseconds(kEnterRerankWaitMs)))
+    if (key->kind == KindEnter && composing_ && lastSelected_ < 0) {
+        // Let the rerank catch up, so what is sent is what it would have shown. One deadline covers a
+        // running job and the newer one queued behind it; the newest result comes back here and is not
+        // delivered a second time. Not with a selection open: the core would not apply it.
+        if (ShanjieRerankJob *job = runner_->waitFor(std::chrono::milliseconds(kEnterRerankWaitMs))) {
             onRerankDone(job);
+            if (!composing_) return false; // the apply failed and the composition is gone
+        }
     }
 
     const Result r = engine_.key(*key);
@@ -82,6 +86,7 @@ void Session::pick(Client &client, uint32_t index) {
 
 void Session::finish(Client &client, bool commit) {
     if (!engine_.ready() || owner_ != &client || !composing_) return;
+    runner_->cancelAll();
     const Result r = engine_.reset(commit ? 0 : 1);
     if (r.code != 0) {
         fail(client, "shanjie_engine_reset", r.code);
@@ -93,9 +98,11 @@ void Session::finish(Client &client, bool commit) {
 void Session::clientDestroyed(Client &client) {
     if (owner_ != &client) return;
     owner_ = nullptr;
+    runner_->cancelAll();
     if (composing_ && engine_.ready()) engine_.reset(1);
     composing_ = false;
     lastVertical_ = 0;
+    lastSelected_ = -1;
     lastPreedit_.reset();
 }
 
@@ -108,6 +115,7 @@ void Session::setConfig(const Config &config) {
         engine_.build(paths_, config_);
         composing_ = false;
         lastVertical_ = 0;
+        lastSelected_ = -1;
         lastPreedit_.reset();
     } else {
         engine_.applySettings(config_);
@@ -135,13 +143,21 @@ void Session::apply(Client &client, const Output &out) {
     }
     composing_ = !out.preedit.empty();
     lastVertical_ = out.vertical;
+    lastSelected_ = out.candidates.empty() ? -1 : out.selected;
 
     if (out.candidates.empty()) {
         client.hideCandidates();
     } else {
         client.showCandidates(out);
     }
-    if (ShanjieRerankJob *job = engine_.takeJob()) runner_->submit(job);
+    ShanjieRerankJob *job = nullptr;
+    const int32_t code = engine_.takeJob(&job);
+    if (code != 0) {
+        // Code 4: the core has discarded the composition, so what is on screen must go too.
+        fail(client, "shanjie_engine_rerank_take", code);
+        return;
+    }
+    if (job) runner_->submit(job);
 }
 
 void Session::fail(Client &client, const char *what, int32_t code) {
@@ -152,6 +168,8 @@ void Session::fail(Client &client, const char *what, int32_t code) {
     lastPreedit_.reset();
     composing_ = false;
     lastVertical_ = 0;
+    lastSelected_ = -1;
+    runner_->cancelAll();
 }
 
 void Session::onRerankDone(ShanjieRerankJob *job) {

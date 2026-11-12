@@ -91,6 +91,12 @@ Turns a physical keycode and modifier state into a `ShanjieKey`, or reports "not
   therefore Super+Backspace. A compositor that grabs Super combinations will hide it; that is a known
   limitation of the first version.
 - Key releases are never translated.
+- **Keycode normalisation happens at the adapter boundary** (`fcitx_key.h`, `toKeyInput`), before
+  `keymap` is called. fcitx5 reports the X keycode, which is the evdev code plus 8 (its Wayland and X11
+  frontends both do), so the adapter subtracts 8. A key event with no keycode (0, or any value below 8)
+  falls back to the keysym read as a US layout; a keysym that maps to no key gives evdev 0, which
+  `keymap` treats as outside its tables. `keymap` itself only ever sees evdev codes. This is tested with
+  real `fcitx::Key` values (`test_fcitx_key`), not only with the evdev table.
 
 ### 4.2 `utf`
 
@@ -140,11 +146,22 @@ One worker thread and a slot for the newest job.
   event dispatcher. The main loop calls `rerank_apply`; code 0 applies the snapshot to the owner context
   if it still exists, code 5 does nothing. The job is then freed. A job is never touched by two threads
   at once.
-- Before an Enter with no candidate window open, the engine unit waits a bounded time for a running job
-  and applies it first, so the committed text matches what the rerank would have shown
-  (`docs/spec/semantic-rerank.md`).
-- On shutdown the worker is joined before the engine is freed. Jobs own their data, so the order is for
-  tidiness, not safety.
+- **Enter's wait** (no selection open): one deadline of 100 ms covers every job in flight, the running
+  one and the newer one queued behind it. The wait ends when nothing is running or queued, and hands
+  back the newest finished job, which the session applies on the main thread at once. An older result
+  that a newer one superseded is freed, never applied (the core would answer "no change"). After the
+  deadline Enter commits what is shown.
+- **No double delivery**: a finished job sits in one slot. Whoever empties it first, the wait or the
+  posted completion, owns the job; the other finds the slot empty and does nothing.
+- **Cancellation**: ending a composition by reset (an application reset, focus-out, a destroyed context,
+  any failure) and rebuilding the engine cancel all jobs: queued and finished ones are freed, a running
+  one is freed when it ends and is never delivered.
+- **Callback lifetime**: joining the worker stops computation but can leave a completion callback
+  queued on the main loop. Each posted callback holds a shared "alive" flag that the runner clears in
+  its destructor, so a late callback touches nothing. Job ownership does not depend on the callback
+  running: the destructor frees whatever is queued or finished. In the addon the event dispatcher
+  outlives the session, and is detached with the engine.
+- On shutdown the worker is joined before the engine is freed.
 
 ### 4.7 `session` and `engine`
 
@@ -162,6 +179,12 @@ main thread.
   focus-out fcitx5 (or the client) commits the client preedit itself, so the session only discards with
   `reset(1)`; a context without client preedit gets `reset(0)`. A password or sensitive context is never
   composed in. A context destroyed while it owns a composition gets `reset(1)`.
+- **Application reset** (`InputMethodEngine::reset`, which fcitx5 leaves empty by default): an
+  application may ask for a reset while it keeps the focus, having dropped its own preedit. The adapter
+  overrides it. If the context owns the composition the session discards it with `reset(1)`, clears the
+  preedit and candidates it showed and its last-sent cache, and cancels pending rerank jobs, so neither
+  the next key nor a late rerank result brings the old text back. A reset from a context that is not
+  the owner does nothing.
 - **Modifier keys** pressed alone are ignored: they neither reach the core nor end the composition.
 - **Key path**: ignore releases; before each key sample the learning gate and call `set_learning`
   (on when the setting is on and the context is not a password field); at the start of a composition
@@ -193,7 +216,18 @@ prediction row is vertical as well. A horizontal option is left for a later vers
 ### 5.3 Errors
 
 A non-zero code from `key` or `pick`: log the code only, call `reset(1)`, clear the preedit and the
-panel, and pass the key through. Non-zero codes from the rerank functions never mean pass-through.
+panel, and pass the key through.
+
+The rerank functions have no key, so their codes never mean pass-through, but they differ in what they
+leave behind (`shanjie.h`, the rerank section):
+
+- `rerank_take` or `rerank_apply` returning 4: the core has already discarded the composition. The
+  shell must follow: clear the preedit, the candidates and its composition state, cancel pending jobs,
+  and log the code. Other non-zero codes from these two are handled the same way.
+- `rerank_apply` returning 5: nothing changed; nothing to do.
+- `rerank_run` failing: no engine is touched and no result is kept; the composition stays as shown and
+  a later apply answers 5.
+
 Input text, candidates, model paths and job pointers are never logged (`docs/spec/privacy.md`, R2).
 
 ## 6. Settings
