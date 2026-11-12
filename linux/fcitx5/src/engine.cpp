@@ -15,6 +15,7 @@
 
 #include "candidates.h"
 #include "fcitx_key.h"
+#include "fcitx_policy.h"
 #include "utf.h"
 
 namespace fcitx {
@@ -142,12 +143,9 @@ void ShanjieEngine::keyEvent(const InputMethodEntry &, KeyEvent &event) {
 
 void ShanjieEngine::deactivate(const InputMethodEntry &, InputContextEvent &event) {
     InputContext *ic = event.inputContext();
-    // On focus-out fcitx5 (or the client) commits the client preedit itself, so committing here too
-    // would insert the text twice. Commit only when switching input method, or when the preedit is
-    // shown in the panel and nobody else will send it.
-    const bool commit = event.type() == EventType::InputContextSwitchInputMethod ||
-                        !ic->capabilityFlags().test(CapabilityFlag::Preedit);
-    session_->finish(*ic->propertyFor(&factory_), commit);
+    // fcitx5 deactivates the input method on the way into a password field, before the flags change;
+    // the policy reads the event so that nothing is committed there (fcitx_policy.h).
+    session_->finish(*ic->propertyFor(&factory_), commitOnDeactivate(event, ic->capabilityFlags()));
 }
 
 // The application asks for a reset, possibly while it keeps the focus (it has dropped its preedit).

@@ -206,7 +206,13 @@ main thread.
 - **Sensitive fields**: the password-or-sensitive check gates every path that could send text to a
   context, not only keys. A candidate click and a finished rerank job in such a context discard the
   composition instead of updating it; a commit that would land there (owner change, settings change,
-  input method switch) is turned into a discard. The adapter watches fcitx5's capability-changed event,
+  input method switch) is turned into a discard. fcitx5 deactivates the input method on the way into
+  a password field while the context's flags are still the old ones: it arrives as a capability event
+  carrying the new flags, or as an input method switch whose reason is the capability change. The
+  adapter's deactivate policy (`fcitx_policy.h`, `commitOnDeactivate`) therefore reads the event, not
+  only the current flags: new flags that are password or sensitive, or a switch with that reason,
+  always discard; only a switch the person asked for commits. It is a pure function tested with real
+  fcitx5 event objects (`test_fcitx_policy`). The adapter also watches fcitx5's capability-changed event,
   so a field that becomes sensitive while it owns a composition loses it at once and its pending rerank
   jobs are cancelled.
 
