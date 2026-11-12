@@ -32,12 +32,13 @@ linux/fcitx5/
   src/keymap.{h,cpp}          no fcitx5 dependency
   src/utf.{h,cpp}             no fcitx5 dependency
   src/core_engine.{h,cpp}     no fcitx5 dependency
+  src/rerank_runner.{h,cpp}   no fcitx5 dependency
+  src/session.{h,cpp}         no fcitx5 dependency
   src/settings.h
   src/candidates.{h,cpp}
-  src/rerank_runner.{h,cpp}
   src/engine.{h,cpp}
-  src/shanjie-addon.conf.in
-  src/shanjie.conf.in         input method entry
+  src/shanjie-addon.conf
+  src/shanjie-im.conf         input method entry
   test/
 ```
 
@@ -46,10 +47,10 @@ linux/fcitx5/
   `cargo rustc -- --print native-static-libs` reports.
 - The header is included from `core/include/` in place. There is no copy, so the header and the static
   library always come from the same commit (`docs/spec/c-abi.md` §2.1).
-- The three units without an fcitx5 dependency build as a static library that the addon and the unit
+- The five units without an fcitx5 dependency build as a static library that the addon and the unit
   tests both link.
-- Build requirements: CMake, a C++20 compiler, the fcitx5 development package, extra-cmake-modules, and
-  the Rust toolchain the repository pins.
+- Build requirements: CMake, a C++20 compiler, the fcitx5 development package, and the Rust toolchain
+  the repository pins.
 - Models are not in git. They are public release assets; the documented way to get them locally is the
   `curl` commands in `CONTRIBUTING.md`, followed by the checksum check. `scripts/fetch-models.sh` is the
   CI copy of that step and needs an authenticated `gh`, so the port does not depend on it.
@@ -66,8 +67,9 @@ linux/fcitx5/
 | Learning file | `fcitx5/shanjie/learn/` in the user data directory, created 0700 by the core |
 | Settings | `fcitx5/conf/shanjie.conf` in the user config directory |
 
-All lookups go through fcitx5's standard path API, so a user-level install under the home directory works
-without root. The model directory is looked up as a whole: the first directory that holds `bigram.sjlm` is
+All lookups go through fcitx5's standard path API. The documented install is system-wide; fcitx5 only
+loads addon libraries from its own library directory unless `FCITX_ADDON_DIRS` is set. When `data/lm`
+exists at configure time the model files are installed to the system data directory as well. The model directory is looked up as a whole: the first directory that holds `bigram.sjlm` is
 used for every model file, because the files are paired by hash.
 
 The trigram tables are memory-mapped while the engine is alive. Replacing a model file must be done by
@@ -122,7 +124,7 @@ An fcitx5 candidate list built from one output.
 - One entry per string in `candidates`, labelled 1–9. Cursor index is `candidate_selected`; −1 means no
   highlight (the prediction row before it is entered), and then the first label is the Tab glyph.
 - Selecting an entry (mouse click) calls `shanjie_engine_pick(index)` and applies the output.
-- Paging buttons send the same keys the keyboard would, so the core stays the only owner of the window
+- The list has no paging buttons; paging is by keyboard, so the core stays the only owner of the window
   position.
 - Layout hint is vertical (§5.2).
 
@@ -130,7 +132,9 @@ An fcitx5 candidate list built from one output.
 
 One worker thread and a slot for the newest job.
 
-- After every applied output the engine unit calls `rerank_take`. A job replaces any queued job that has
+- It has no fcitx5 dependency: it is given a `post` function that runs a callback on the main loop
+  (fcitx5's event dispatcher in the addon, a hand-pumped queue in tests).
+- After every applied output the session calls `rerank_take`. A job replaces any queued job that has
   not started; the replaced job is freed.
 - The worker calls `shanjie_rerank_run` and posts the finished job to the main loop through fcitx5's
   event dispatcher. The main loop calls `rerank_apply`; code 0 applies the snapshot to the owner context
@@ -142,16 +146,23 @@ One worker thread and a slot for the newest job.
 - On shutdown the worker is joined before the engine is freed. Jobs own their data, so the order is for
   tidiness, not safety.
 
-### 4.7 `engine`
+### 4.7 `session` and `engine`
 
-The fcitx5 input method engine. All C ABI calls except `rerank_run` and `rerank_free` happen on the
-fcitx5 main thread.
+`session` holds the shell logic and has no fcitx5 dependency: it talks to the application through a small
+`Client` interface (commit, set and clear preedit, show and hide candidates, password flag, left context),
+as `ShanjieKit` does on macOS, so it is tested against a fake client with the real core. `engine` is the
+fcitx5 input method engine: a thin adapter that turns fcitx5 events into session calls and implements
+`Client` per input context. All C ABI calls except `rerank_run` and `rerank_free` happen on the fcitx5
+main thread.
 
 - **One engine per process** (about 240 MB). Per input context the shell keeps only the last preedit it
   sent and whether a composition is open.
-- **Owner**: the focused input context. Focus-out and switching away from the input method call
-  `reset(0)` and commit to that context. A context with the password capability gets `reset(1)`.
-  A context destroyed while it owns a composition gets `reset(1)`.
+- **Owner**: the input context that last received a key. A key in another context first commits the open
+  composition to its owner. Switching away from the input method calls `reset(0)` and commits. On
+  focus-out fcitx5 (or the client) commits the client preedit itself, so the session only discards with
+  `reset(1)`; a context without client preedit gets `reset(0)`. A password or sensitive context is never
+  composed in. A context destroyed while it owns a composition gets `reset(1)`.
+- **Modifier keys** pressed alone are ignored: they neither reach the core nor end the composition.
 - **Key path**: ignore releases; before each key sample the learning gate and call `set_learning`
   (on when the setting is on and the context is not a password field); at the start of a composition
   call `set_left_context`; translate; a key outside the table commits an open composition with
@@ -201,7 +212,8 @@ Input text, candidates, model paths and job pointers are never logged (`docs/spe
 | Learning | gate for `set_learning` | no |
 | Key habit: Shanjie, Microsoft Zhuyin | `set_key_scheme` | no |
 
-Defaults follow the macOS app's defaults. Strength choices are limited to what `rerank_levels` reports.
+Defaults follow the macOS app's defaults. A settings change first commits an open composition, so the
+snapshots the setting calls return are not applied.
 
 ## 7. Testing
 
@@ -210,8 +222,12 @@ Defaults follow the macOS app's defaults. Strength choices are limited to what `
   surrogate pairs and out-of-range offsets.
 - **Core wrapper test** (real lexicon and models): both layouts type 你好 through `core_engine`; the
   settings sequence is sent after every build; a missing model directory still yields a typing engine.
-- **Integration test** with fcitx5's test frontend: `s u 3 c l 3` then Enter commits 你好; Space opens
-  the window and a digit picks; focus-out commits an open composition.
+- **Session tests** (fake client, real core and models): `s u 3 c l 3` then Enter commits 你好; Space
+  opens the vertical window and a pick works; a key outside the table commits; a lone modifier does not;
+  a key in another client commits to the owner; a password client passes through; the ETen layout after
+  a settings change; a rerank job runs and applies through a hand-pumped queue.
+- The fcitx5 adapter has no automated test (the test frontend's header is not in the development
+  package); it is checked by hand.
 - **Manual check**: a GTK application, a Qt application and a terminal, under Wayland and X11 where
   available.
 - Tests that need models fail with a message saying how to get them; they do not skip.
