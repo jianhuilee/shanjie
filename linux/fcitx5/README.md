@@ -37,10 +37,10 @@ are memory-mapped while fcitx5 runs.
 
 ## Selection keys
 
-Candidates are picked with 1–9 by default. "Candidate selection keys" in the settings switches to
-`a s d f g h j k l` or `a s d f j k l ;`; the list then shows the letters, and the digits still work.
-The letters pick only while a list is open for choosing (after Space or Down, or after Tab in the
-prediction row); otherwise they type Zhuyin. With the eight-key choice the ninth item has no letter.
+Candidates are picked with 1–9 by default. "Candidate selection keys" in the settings switches to the
+home row `a s d f g h j k l ;`; the list then shows the letters, and the digits still work. The letters
+pick only while a list is open for choosing (after Space or Down, or after Tab in the prediction row);
+otherwise they type Zhuyin. A page holds nine items, so `;` is spare.
 
 ## Known limitations
 

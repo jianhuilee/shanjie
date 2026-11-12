@@ -65,8 +65,7 @@ std::optional<ShanjieKey> translatePage(const KeyInput &in) {
 
 const char *selectionKeyChars(uint32_t choice) {
     switch (choice) {
-    case 1: return "asdfghjkl";
-    case 2: return "asdfjkl;";
+    case 1: return "asdfghjkl;";
     default: return "";
     }
 }

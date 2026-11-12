@@ -43,7 +43,7 @@ ShanjieCandidateList::ShanjieCandidateList(ShanjieEngine *engine, const shanjie:
         } else if (i < selectionKeys.size()) {
             labels_.emplace_back(std::string(1, selectionKeys[i]) + ". ");
         } else {
-            labels_.emplace_back(""); // no letter for this item: arrows and Enter, or its digit
+            labels_.emplace_back(""); // no key for this item
         }
     }
 }

@@ -358,13 +358,13 @@ int main() {
     }
     {
         Config homeRow;
-        homeRow.selectionKeys = 2; // a s d f j k l ;
+        homeRow.selectionKeys = 1; // a s d f g h j k l ;
         s.setConfig(homeRow);
         CHECK(s.ready());
         FakeClient c;
         press(s, c, {KS, KU, K3, KSpace});
-        CHECK(c.candidatesVisible && c.shownKeys == "asdfjkl;" && c.shown.candidates.size() == 9);
-        const std::string third = c.shown.candidates[2], eighth = c.shown.candidates[7];
+        CHECK(c.candidatesVisible && c.shownKeys == "asdfghjkl;" && c.shown.candidates.size() == 9);
+        const std::string third = c.shown.candidates[2], ninth = c.shown.candidates[8];
         KeyInput shiftD = key(32);
         shiftD.shift = true;
         s.handleKey(c, shiftD); // a modified key is not a selection key
@@ -377,8 +377,14 @@ int main() {
         s.finish(c, false);
 
         press(s, c, {KS, KU, K3, KSpace});
-        CHECK(s.handleKey(c, key(39))); // ; : the eighth item
-        CHECK(!c.candidatesVisible && c.preedit == eighth);
+        CHECK(s.handleKey(c, key(38))); // l: the ninth item
+        CHECK(!c.candidatesVisible && c.preedit == ninth);
+        s.finish(c, false);
+
+        press(s, c, {KS, KU, K3, KSpace});
+        const std::string open = c.preedit;
+        CHECK(s.handleKey(c, key(39))); // ; would be a tenth item: eaten, the window stays
+        CHECK(c.candidatesVisible && c.preedit == open && c.commits.empty());
         s.finish(c, false);
 
         press(s, c, {KS, KU, K3, KSpace});
@@ -406,9 +412,9 @@ int main() {
         FakeClient few;
         press(s, few, {KS, KU, K3, KC});
         s.handleKey(few, key(15));
-        if (few.shown.candidates.size() < 8) {
+        if (few.shown.candidates.size() < 9) {
             const std::string was = few.preedit;
-            CHECK(s.handleKey(few, key(39)));
+            CHECK(s.handleKey(few, key(38)));
             CHECK(few.preedit == was && few.shown.selected == 0);
         }
         s.finish(few, false);

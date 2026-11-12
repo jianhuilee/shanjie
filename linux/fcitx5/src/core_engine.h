@@ -43,7 +43,7 @@ struct Config {
     uint32_t rerankLevel = 1;
     uint32_t keyScheme = 0;
     bool learning = true;  // the shell's gate for set_learning; not sent by applySettings
-    uint32_t selectionKeys = 0; // shell only (keymap.h, selectionKeyChars): 0 digits, 1 asdfghjkl, 2 asdfjkl;
+    uint32_t selectionKeys = 0; // shell only (keymap.h, selectionKeyChars): 0 digits, 1 asdfghjkl;
 };
 
 // Directories. `lexicon` is required. `lm` and `learn` may be empty (no model, no learning file).

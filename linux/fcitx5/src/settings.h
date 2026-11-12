@@ -19,9 +19,8 @@ FCITX_CONFIG_ENUM_NAME_WITH_I18N(ShanjieStrength, N_("Conservative"), N_("Standa
 enum class ShanjieKeyHabit { Shanjie, MicrosoftZhuyin };
 FCITX_CONFIG_ENUM_NAME_WITH_I18N(ShanjieKeyHabit, N_("Shanjie"), N_("Microsoft Zhuyin"));
 
-enum class ShanjieSelectionKeys { Digits, HomeRow, RestingKeys };
-FCITX_CONFIG_ENUM_NAME_WITH_I18N(ShanjieSelectionKeys, N_("1 2 3 4 5 6 7 8 9"), N_("a s d f g h j k l"),
-                                 N_("a s d f j k l ;"));
+enum class ShanjieSelectionKeys { Digits, HomeRow };
+FCITX_CONFIG_ENUM_NAME_WITH_I18N(ShanjieSelectionKeys, N_("1 2 3 4 5 6 7 8 9"), N_("a s d f g h j k l ;"));
 
 FCITX_CONFIGURATION(
     ShanjieConfig,

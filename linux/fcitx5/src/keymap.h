@@ -34,8 +34,8 @@ std::optional<ShanjieKey> translate(const KeyInput &in);
 std::optional<ShanjieKey> translatePage(const KeyInput &in);
 
 // The keys that pick a candidate, in order, for a selection-key choice: 0 is the digits (the core's own
-// rule, so the string is empty and the shell does nothing), 1 the home row "asdfghjkl", 2 the eight
-// resting keys "asdfjkl;". Unknown choices are treated as 0.
+// rule, so the string is empty and the shell does nothing), 1 the home row "asdfghjkl;" (ten keys; the
+// core shows nine items a page, so the last is spare). Unknown choices are treated as 0.
 const char *selectionKeyChars(uint32_t choice);
 
 // The candidate position `ch` picks under `choice`, or nullopt when it is not a selection key.
