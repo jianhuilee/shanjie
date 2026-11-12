@@ -29,7 +29,7 @@ public:
     void commit(const std::string &text) override;
     void setPreedit(const std::string &text, size_t cursor, size_t englishStart, size_t englishEnd) override;
     void clearPreedit() override;
-    void showCandidates(const shanjie::Output &out) override;
+    void showCandidates(const shanjie::Output &out, const std::string &selectionKeys) override;
     void hideCandidates() override;
     bool isPassword() const override;
     std::optional<std::string> leftContext() const override;

@@ -88,8 +88,8 @@ void ShanjieClient::clearPreedit() {
     ic_->updateUserInterface(UserInterfaceComponent::InputPanel);
 }
 
-void ShanjieClient::showCandidates(const shanjie::Output &out) {
-    ic_->inputPanel().setCandidateList(std::make_unique<ShanjieCandidateList>(engine_, out));
+void ShanjieClient::showCandidates(const shanjie::Output &out, const std::string &selectionKeys) {
+    ic_->inputPanel().setCandidateList(std::make_unique<ShanjieCandidateList>(engine_, out, selectionKeys));
     ic_->updateUserInterface(UserInterfaceComponent::InputPanel);
 }
 

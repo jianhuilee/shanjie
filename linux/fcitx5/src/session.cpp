@@ -54,6 +54,17 @@ bool Session::handleKey(Client &client, const KeyInput &in) {
         return false;
     }
 
+    // Letter selection keys: with the candidate window open or the prediction row entered, an unmodified
+    // selection key picks that item through the core's pick, the path a click takes, so learning is the
+    // same as for a digit. A key beyond the items shown is eaten, as the core does with a digit. The
+    // digits keep working. A prediction row that is only showing is not a selection: typing goes on.
+    if (key->kind == KindChar && key->modifiers == 0 && lastSelected_ >= 0) {
+        if (const std::optional<uint32_t> index = selectionIndex(config_.selectionKeys, key->ch)) {
+            if (*index < lastCount_) pick(client, *index);
+            return true;
+        }
+    }
+
     if (!composing_) {
         const std::optional<std::string> left = client.leftContext();
         engine_.setLeftContext(left ? left->c_str() : nullptr);
@@ -118,6 +129,7 @@ void Session::clientDestroyed(Client &client) {
     composing_ = false;
     lastVertical_ = 0;
     lastSelected_ = -1;
+    lastCount_ = 0;
     lastPreedit_.reset();
 }
 
@@ -131,6 +143,8 @@ void Session::setConfig(const Config &config) {
         composing_ = false;
         lastVertical_ = 0;
         lastSelected_ = -1;
+        lastCount_ = 0;
+    lastCount_ = 0;
         lastPreedit_.reset();
     } else {
         engine_.applySettings(config_);
@@ -159,11 +173,12 @@ void Session::apply(Client &client, const Output &out) {
     composing_ = !out.preedit.empty();
     lastVertical_ = out.vertical;
     lastSelected_ = out.candidates.empty() ? -1 : out.selected;
+    lastCount_ = static_cast<uint32_t>(out.candidates.size());
 
     if (out.candidates.empty()) {
         client.hideCandidates();
     } else {
-        client.showCandidates(out);
+        client.showCandidates(out, selectionKeyChars(config_.selectionKeys));
     }
     ShanjieRerankJob *job = nullptr;
     const int32_t code = engine_.takeJob(&job);
@@ -184,6 +199,7 @@ void Session::fail(Client &client, const char *what, int32_t code) {
     composing_ = false;
     lastVertical_ = 0;
     lastSelected_ = -1;
+    lastCount_ = 0;
     runner_->cancelAll();
 }
 

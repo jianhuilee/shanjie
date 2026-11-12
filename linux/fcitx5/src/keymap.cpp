@@ -63,6 +63,21 @@ std::optional<ShanjieKey> translatePage(const KeyInput &in) {
     return std::nullopt;
 }
 
+const char *selectionKeyChars(uint32_t choice) {
+    switch (choice) {
+    case 1: return "asdfghjkl";
+    case 2: return "asdfjkl;";
+    default: return "";
+    }
+}
+
+std::optional<uint32_t> selectionIndex(uint32_t choice, uint32_t ch) {
+    const char *keys = selectionKeyChars(choice);
+    for (uint32_t i = 0; keys[i]; i++)
+        if (static_cast<unsigned char>(keys[i]) == ch) return i;
+    return std::nullopt;
+}
+
 bool isPageKey(uint32_t evdev) { return evdev == 104 || evdev == 109; }
 
 bool isModifierKey(uint32_t evdev) {

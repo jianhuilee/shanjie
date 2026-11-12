@@ -28,7 +28,8 @@ private:
 
 } // namespace
 
-ShanjieCandidateList::ShanjieCandidateList(ShanjieEngine *engine, const shanjie::Output &out)
+ShanjieCandidateList::ShanjieCandidateList(ShanjieEngine *engine, const shanjie::Output &out,
+                                           const std::string &selectionKeys)
     : cursor_(out.selected) {
     // selected -1 with candidates is the prediction row before it is entered: no highlight, and only
     // the first cell is marked, with the Tab glyph (docs/spec/prediction.md §8).
@@ -37,8 +38,12 @@ ShanjieCandidateList::ShanjieCandidateList(ShanjieEngine *engine, const shanjie:
         words_.push_back(std::make_unique<ShanjieCandidateWord>(engine, i, out.candidates[i]));
         if (passiveRow) {
             labels_.emplace_back(i == 0 ? "\xe2\x87\xa5 " : "");
-        } else {
+        } else if (selectionKeys.empty()) {
             labels_.emplace_back(std::to_string(i + 1) + ". ");
+        } else if (i < selectionKeys.size()) {
+            labels_.emplace_back(std::string(1, selectionKeys[i]) + ". ");
+        } else {
+            labels_.emplace_back(""); // no letter for this item: arrows and Enter, or its digit
         }
     }
 }

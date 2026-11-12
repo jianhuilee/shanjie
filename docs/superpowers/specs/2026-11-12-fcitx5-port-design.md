@@ -262,9 +262,20 @@ Input text, candidates, model paths and job pointers are never logged (`docs/spe
 | Semantic rerank, and strength | `set_rerank`, `set_rerank_level` | no |
 | Learning | gate for `set_learning` | no |
 | Key habit: Shanjie, Microsoft Zhuyin | `set_key_scheme` | no |
+| Candidate selection keys: digits, `asdfghjkl`, `asdfjkl;` | none (shell only, §6.1) | no |
 
 Defaults follow the macOS app's defaults. A settings change first commits an open composition, so the
 snapshots the setting calls return are not applied.
+
+### 6.1 Letter selection keys
+
+The core picks with the digits 1–9. Letter selection keys are a shell feature, with no change to the
+core: while a selection is open (the candidate window, or the prediction row after Tab; `candidate_selected`
+0 or more) an unmodified selection key calls `shanjie_engine_pick` with its position, the path a mouse
+click takes, so learning is the same as for a digit. A key whose position is beyond the items shown is
+eaten. The digits keep working. A prediction row that is only showing is not a selection, so the keys
+type Zhuyin there, as they do whenever nothing is open. The list's labels show the letters; with the
+eight-key choice the ninth item has no letter and is reached by the arrows and Enter, or by 9.
 
 ## 7. Testing
 

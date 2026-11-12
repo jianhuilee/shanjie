@@ -35,6 +35,13 @@ configure button. The learning file is kept in `shanjie/learn` under fcitx5's us
 To update the models later, replace the files by rename, not by writing in place: the trigram tables
 are memory-mapped while fcitx5 runs.
 
+## Selection keys
+
+Candidates are picked with 1–9 by default. "Candidate selection keys" in the settings switches to
+`a s d f g h j k l` or `a s d f j k l ;`; the list then shows the letters, and the digits still work.
+The letters pick only while a list is open for choosing (after Space or Down, or after Tab in the
+prediction row); otherwise they type Zhuyin. With the eight-key choice the ninth item has no letter.
+
 ## Known limitations
 
 - The candidate window is always vertical; there is no expanded grid.

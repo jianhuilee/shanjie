@@ -20,7 +20,9 @@ public:
     // Offsets are bytes in `text`. The English run is [englishStart, englishEnd); equal means none.
     virtual void setPreedit(const std::string &text, size_t cursor, size_t englishStart, size_t englishEnd) = 0;
     virtual void clearPreedit() = 0;
-    virtual void showCandidates(const Output &out) = 0;
+    // `selectionKeys` are the keys that pick the items, in order; empty means the digits 1-9. An item
+    // beyond the string has no key.
+    virtual void showCandidates(const Output &out, const std::string &selectionKeys) = 0;
     virtual void hideCandidates() = 0;
     virtual bool isPassword() const = 0;
     // The text before the cursor, or nullopt when the application does not provide it.
@@ -71,6 +73,7 @@ private:
     bool composing_ = false;
     uint32_t lastVertical_ = 0;
     int32_t lastSelected_ = -1;
+    uint32_t lastCount_ = 0;
     int enterRerankWaitMs_ = kEnterRerankWaitMs;
     // What the owner was last sent, to avoid resending an unchanged preedit.
     std::optional<std::tuple<std::string, size_t, size_t, size_t>> lastPreedit_;

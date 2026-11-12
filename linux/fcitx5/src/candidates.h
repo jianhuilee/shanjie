@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <fcitx/candidatelist.h>
@@ -15,7 +16,8 @@ class ShanjieEngine;
 // them and turns a click into a pick. No paging buttons (design §4.5).
 class ShanjieCandidateList : public CandidateList {
 public:
-    ShanjieCandidateList(ShanjieEngine *engine, const shanjie::Output &out);
+    // `selectionKeys`: the keys that pick the items, in order; empty for the digits 1-9.
+    ShanjieCandidateList(ShanjieEngine *engine, const shanjie::Output &out, const std::string &selectionKeys);
 
     const Text &label(int idx) const override { return labels_[idx]; }
     const CandidateWord &candidate(int idx) const override { return *words_[idx]; }

@@ -19,6 +19,7 @@ struct FakeClient : Client {
     size_t cursor = 0;
     int preeditSets = 0, preeditClears = 0, shows = 0, hides = 0;
     Output shown;
+    std::string shownKeys;
     bool candidatesVisible = false;
     bool password = false;
     std::optional<std::string> left;
@@ -33,8 +34,9 @@ struct FakeClient : Client {
         preedit.clear();
         preeditClears++;
     }
-    void showCandidates(const Output &out) override {
+    void showCandidates(const Output &out, const std::string &keys) override {
         shown = out;
+        shownKeys = keys;
         candidatesVisible = true;
         shows++;
     }
@@ -342,6 +344,75 @@ int main() {
         CHECK(c.preeditSets == sets && c.preedit.empty() && c.commits.empty());
         press(s, c, {KS, KU, K3, KC, KL, K3, KEnter});
         CHECK(c.commits.size() == 1 && c.commits[0] == kNihao); // nothing left over from before
+    }
+
+    // Letter selection keys. By default (digits) a letter is not a selection key.
+    {
+        FakeClient c;
+        press(s, c, {KS, KU, K3, KSpace});
+        CHECK(c.candidatesVisible && c.shownKeys.empty() && c.shown.candidates.size() == 9);
+        const std::string third = c.shown.candidates[2];
+        CHECK(s.handleKey(c, key(4))); // the 3 key picks the third item
+        CHECK(!c.candidatesVisible && c.preedit == third);
+        s.finish(c, false);
+    }
+    {
+        Config homeRow;
+        homeRow.selectionKeys = 2; // a s d f j k l ;
+        s.setConfig(homeRow);
+        CHECK(s.ready());
+        FakeClient c;
+        press(s, c, {KS, KU, K3, KSpace});
+        CHECK(c.candidatesVisible && c.shownKeys == "asdfjkl;" && c.shown.candidates.size() == 9);
+        const std::string third = c.shown.candidates[2], eighth = c.shown.candidates[7];
+        KeyInput shiftD = key(32);
+        shiftD.shift = true;
+        s.handleKey(c, shiftD); // a modified key is not a selection key
+        CHECK(c.preedit != third);
+        s.finish(c, false);
+
+        press(s, c, {KS, KU, K3, KSpace});
+        CHECK(s.handleKey(c, key(32))); // d: the third item
+        CHECK(!c.candidatesVisible && c.preedit == third && c.commits.empty());
+        s.finish(c, false);
+
+        press(s, c, {KS, KU, K3, KSpace});
+        CHECK(s.handleKey(c, key(39))); // ; : the eighth item
+        CHECK(!c.candidatesVisible && c.preedit == eighth);
+        s.finish(c, false);
+
+        press(s, c, {KS, KU, K3, KSpace});
+        CHECK(s.handleKey(c, key(4))); // the digits still pick
+        CHECK(!c.candidatesVisible && c.preedit == third);
+        s.finish(c, false);
+
+        // With no selection open the same keys type Zhuyin as always.
+        press(s, c, {KS, KU, K3, KC, KL, K3, KEnter});
+        CHECK(c.commits.size() == 1 && c.commits[0] == kNihao);
+
+        // The prediction row: only showing, a letter keeps typing; entered with Tab, it picks.
+        FakeClient p;
+        press(s, p, {KS, KU, K3, KC}); // 你 and an unfinished syllable: a row is showing
+        CHECK(p.candidatesVisible && p.shown.selected == -1 && p.shown.vertical == 2);
+        const std::string first = p.shown.candidates[0];
+        const std::string beforeTab = p.preedit;
+        CHECK(s.handleKey(p, key(15))); // Tab enters the row
+        CHECK(p.shown.selected == 0 && p.preedit == beforeTab);
+        CHECK(s.handleKey(p, key(30))); // a: the first item
+        CHECK(p.preedit != beforeTab && p.preedit.find(first) != std::string::npos);
+        s.finish(p, false);
+
+        // A key beyond the items shown is eaten.
+        FakeClient few;
+        press(s, few, {KS, KU, K3, KC});
+        s.handleKey(few, key(15));
+        if (few.shown.candidates.size() < 8) {
+            const std::string was = few.preedit;
+            CHECK(s.handleKey(few, key(39)));
+            CHECK(few.preedit == was && few.shown.selected == 0);
+        }
+        s.finish(few, false);
+        s.setConfig(Config{});
     }
 
     // The ETen layout after a settings change; an open composition is committed first.

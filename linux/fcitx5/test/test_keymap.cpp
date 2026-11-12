@@ -71,6 +71,14 @@ int main() {
 
     CHECK(isPageKey(104) && isPageKey(109) && !isPageKey(108) && !isPageKey(0));
 
+    // Selection keys.
+    CHECK(std::string(selectionKeyChars(0)).empty() && std::string(selectionKeyChars(99)).empty());
+    CHECK(!selectionIndex(0, 'a') && !selectionIndex(0, '1'));
+    CHECK(selectionIndex(1, 'a') == 0u && selectionIndex(1, 'g') == 4u && selectionIndex(1, 'l') == 8u);
+    CHECK(!selectionIndex(1, ';') && !selectionIndex(1, '1'));
+    CHECK(selectionIndex(2, 'a') == 0u && selectionIndex(2, 'j') == 4u && selectionIndex(2, ';') == 7u);
+    CHECK(!selectionIndex(2, 'g') && !selectionIndex(2, 'h'));
+
     // Modifier keys themselves.
     for (uint32_t e : {29u, 42u, 54u, 56u, 58u, 97u, 100u, 125u, 126u}) CHECK(isModifierKey(e));
     CHECK(!isModifierKey(30));

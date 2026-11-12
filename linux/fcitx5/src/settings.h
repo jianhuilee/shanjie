@@ -19,6 +19,10 @@ FCITX_CONFIG_ENUM_NAME_WITH_I18N(ShanjieStrength, N_("Conservative"), N_("Standa
 enum class ShanjieKeyHabit { Shanjie, MicrosoftZhuyin };
 FCITX_CONFIG_ENUM_NAME_WITH_I18N(ShanjieKeyHabit, N_("Shanjie"), N_("Microsoft Zhuyin"));
 
+enum class ShanjieSelectionKeys { Digits, HomeRow, RestingKeys };
+FCITX_CONFIG_ENUM_NAME_WITH_I18N(ShanjieSelectionKeys, N_("1 2 3 4 5 6 7 8 9"), N_("a s d f g h j k l"),
+                                 N_("a s d f j k l ;"));
+
 FCITX_CONFIGURATION(
     ShanjieConfig,
     OptionWithAnnotation<ShanjieLayout, ShanjieLayoutI18NAnnotation> layout{
@@ -27,6 +31,8 @@ FCITX_CONFIGURATION(
         this, "Style", _("Writing style"), ShanjieStyle::Chat};
     OptionWithAnnotation<ShanjieKeyHabit, ShanjieKeyHabitI18NAnnotation> keyHabit{
         this, "KeyHabit", _("Key habit"), ShanjieKeyHabit::Shanjie};
+    OptionWithAnnotation<ShanjieSelectionKeys, ShanjieSelectionKeysI18NAnnotation> selectionKeys{
+        this, "SelectionKeys", _("Candidate selection keys"), ShanjieSelectionKeys::Digits};
     Option<bool> prediction{this, "Prediction", _("Show the prediction row"), true};
     Option<bool> abbreviation{this, "Abbreviation", _("Abbreviated input (initials only)"), false};
     Option<bool> demote{this, "Demote", _("Avoid ranking sensitive words first"), true};
@@ -70,6 +76,7 @@ inline shanjie::Config toCoreConfig(const ShanjieConfig &c) {
     out.rerankLevel = static_cast<uint32_t>(*c.rerankStrength);
     out.keyScheme = *c.keyHabit == ShanjieKeyHabit::MicrosoftZhuyin ? 1 : 0;
     out.learning = *c.learning;
+    out.selectionKeys = static_cast<uint32_t>(*c.selectionKeys);
     return out;
 }
 
