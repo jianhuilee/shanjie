@@ -69,6 +69,8 @@ int main() {
     CHECK(!translatePage(capsPage));
     CHECK(!translatePage(key(30)));
 
+    CHECK(isPageKey(104) && isPageKey(109) && !isPageKey(108) && !isPageKey(0));
+
     // Modifier keys themselves.
     for (uint32_t e : {29u, 42u, 54u, 56u, 58u, 97u, 100u, 125u, 126u}) CHECK(isModifierKey(e));
     CHECK(!isModifierKey(30));

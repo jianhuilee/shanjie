@@ -66,8 +66,13 @@ struct Pump {
 // evdev codes of the keys the tests press.
 enum : uint32_t {
     K3 = 4, KE = 18, KU = 22, KEnter = 28, KS = 31, KH = 35, KL = 38, KLeftShift = 42, KZ = 44, KC = 46,
-    KN = 49, KSpace = 57, KF1 = 59,
+    KN = 49, KSpace = 57, KF1 = 59, KPageUp = 104, KPageDown = 109,
 };
+
+// ji3 y94 tj/6 283: the n-gram alone decodes it as 我在重打, the semantic rerank makes it 我再重打.
+static const std::initializer_list<uint32_t> kRerankKeys = {36, 23, 4, 21, 10, 5, 20, 36, 53, 7, 3, 9, 4};
+static const std::string kBeforeRerank = "\xe6\x88\x91\xe5\x9c\xa8\xe9\x87\x8d\xe6\x89\x93";
+static const std::string kAfterRerank = "\xe6\x88\x91\xe5\x86\x8d\xe9\x87\x8d\xe6\x89\x93";
 
 static KeyInput key(uint32_t evdev) {
     KeyInput in;
@@ -134,6 +139,42 @@ int main() {
         CHECK(c.commits.size() == 1);
     }
 
+    // Page Up / Down outside a vertical window, or with a modifier, reach the application and leave
+    // the composition alone; in the window, unmodified, they page it.
+    {
+        FakeClient c;
+        press(s, c, {KS, KU, K3});
+        const std::string before = c.preedit;
+        const int sets = c.preeditSets;
+        CHECK(!s.handleKey(c, key(KPageDown)));
+        CHECK(!s.handleKey(c, key(KPageUp)));
+        KeyInput shiftPage = key(KPageDown);
+        shiftPage.shift = true;
+        CHECK(!s.handleKey(c, shiftPage));
+        CHECK(c.commits.empty() && c.preedit == before && c.preeditSets == sets && c.preeditClears == 0);
+
+        s.handleKey(c, key(KSpace)); // opens the vertical window
+        CHECK(c.candidatesVisible && c.shown.vertical == 1 && c.shown.first == 0);
+        CHECK(c.shown.total > 9); // enough homophones of this syllable for a second page
+        KeyInput ctrlPage = key(KPageDown);
+        ctrlPage.ctrl = true;
+        CHECK(!s.handleKey(c, ctrlPage));
+        CHECK(c.commits.empty() && c.candidatesVisible && c.shown.first == 0);
+        CHECK(s.handleKey(c, key(KPageDown)));
+        CHECK(c.commits.empty() && c.candidatesVisible && c.shown.first == 9);
+        CHECK(s.handleKey(c, key(KPageUp)));
+        CHECK(c.candidatesVisible && c.shown.first == 0);
+        s.finish(c, false);
+        CHECK(c.commits.empty());
+    }
+
+    // With nothing composed a page key is simply passed on.
+    {
+        FakeClient c;
+        CHECK(!s.handleKey(c, key(KPageDown)));
+        CHECK(c.commits.empty() && c.preeditSets == 0);
+    }
+
     // A modifier pressed alone neither commits nor is consumed.
     {
         FakeClient c;
@@ -181,22 +222,54 @@ int main() {
         s.finish(c, false);
     }
 
-    // Rerank: jobs run and come back through the pump without disturbing a later commit.
+    // Rerank, asynchronous completion: the n-gram result shows first, the reranked one replaces it when
+    // the job comes back through the main loop, and Enter then sends the reranked text.
     {
         FakeClient c;
-        // rup wu0 wu0 fu4 cp3 cl3 (今天天氣很好) by evdev code
-        press(s, c, {19, 22, 25, KSpace, 17, 22, 11, KSpace, 17, 22, 11, KSpace, 33, 22, 5, KC, 25, K3, KC, KL, K3});
-        CHECK(!c.preedit.empty());
-        for (int i = 0; i < 100; i++) {
+        press(s, c, kRerankKeys);
+        CHECK(c.preedit == kBeforeRerank); // nothing was pumped yet
+        for (int i = 0; i < 1000 && c.preedit != kAfterRerank; i++) {
             pump.run();
             std::this_thread::sleep_for(5ms);
         }
-        CHECK(!c.preedit.empty());
+        CHECK(c.preedit == kAfterRerank);
+        CHECK(c.cursor == kAfterRerank.size());
+        CHECK(c.commits.empty());
         CHECK(s.handleKey(c, key(KEnter)));
-        CHECK(c.commits.size() == 1 && !c.commits[0].empty());
+        CHECK(c.commits.size() == 1 && c.commits[0] == kAfterRerank);
         CHECK(c.preedit.empty());
-        pump.run(); // a late result applies to nothing
+        pump.run(); // nothing late changes it
         CHECK(c.commits.size() == 1 && c.preedit.empty());
+    }
+
+    // Rerank, Enter's wait: Enter arrives before any completion ran on the main loop. It waits for the
+    // job and sends the reranked text.
+    {
+        FakeClient c;
+        s.setEnterRerankWaitMs(10000);
+        press(s, c, kRerankKeys);
+        CHECK(c.preedit == kBeforeRerank);
+        CHECK(s.handleKey(c, key(KEnter))); // no pump.run() in between
+        CHECK(c.commits.size() == 1 && c.commits[0] == kAfterRerank);
+        CHECK(c.preedit.empty());
+        pump.run(); // the completions posted meanwhile find nothing to deliver
+        CHECK(c.commits.size() == 1 && c.preedit.empty());
+        s.setEnterRerankWaitMs(Session::kEnterRerankWaitMs);
+    }
+
+    // Rerank, no wait: with a zero deadline Enter sends what is shown, and the late result is dropped.
+    {
+        FakeClient c;
+        s.setEnterRerankWaitMs(0);
+        press(s, c, kRerankKeys);
+        CHECK(s.handleKey(c, key(KEnter)));
+        CHECK(c.commits.size() == 1 && c.commits[0] == kBeforeRerank);
+        for (int i = 0; i < 60; i++) {
+            pump.run();
+            std::this_thread::sleep_for(5ms);
+        }
+        CHECK(c.commits.size() == 1 && c.preedit.empty());
+        s.setEnterRerankWaitMs(Session::kEnterRerankWaitMs);
     }
 
     // A reset the application asks for while it keeps the focus: the composition is dropped for good.

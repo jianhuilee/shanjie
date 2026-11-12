@@ -41,7 +41,13 @@ bool Session::handleKey(Client &client, const KeyInput &in) {
     engine_.setLearning(config_.learning);
 
     std::optional<ShanjieKey> key = translate(in);
-    if (!key && lastVertical_ == 1) key = translatePage(in);
+    if (!key && isPageKey(in.evdev)) {
+        // Page Up / Down go to the core only for an open vertical window and without modifiers. In
+        // every other state they belong to the application and leave the composition as it is, which
+        // is what the core itself does with them (shanjie.h, PAGE_UP / PAGE_DOWN).
+        if (lastVertical_ == 1) key = translatePage(in);
+        if (!key) return false;
+    }
     if (!key) {
         // Outside the tables: send the composition, then let the application have the key.
         finish(client, true);
@@ -56,7 +62,7 @@ bool Session::handleKey(Client &client, const KeyInput &in) {
         // Let the rerank catch up, so what is sent is what it would have shown. One deadline covers a
         // running job and the newer one queued behind it; the newest result comes back here and is not
         // delivered a second time. Not with a selection open: the core would not apply it.
-        if (ShanjieRerankJob *job = runner_->waitFor(std::chrono::milliseconds(kEnterRerankWaitMs))) {
+        if (ShanjieRerankJob *job = runner_->waitFor(std::chrono::milliseconds(enterRerankWaitMs_))) {
             onRerankDone(job);
             if (!composing_) return false; // the apply failed and the composition is gone
         }

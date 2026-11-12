@@ -35,7 +35,12 @@ target_include_directories(shanjie_shell PUBLIC src)
 target_link_libraries(shanjie_shell PUBLIC shanjie_core)
 
 # --- The fcitx5 addon
+# fcitx5 loads addon libraries only from its own library directory. Without this, the default prefix
+# (/usr/local) would install a library fcitx5 never finds. Defined before find_package so that it is the
+# default; pass -DFCITX_INSTALL_USE_FCITX_SYS_PATHS=OFF with FCITX_ADDON_DIRS set for a private install.
+option(FCITX_INSTALL_USE_FCITX_SYS_PATHS "Install into the directories fcitx5 itself uses" ON)
 find_package(Fcitx5Core 5.1 REQUIRED)
+message(STATUS "Shanjie addon library goes to ${FCITX_INSTALL_ADDONDIR}")
 add_library(shanjie MODULE
     src/candidates.cpp
     src/engine.cpp)

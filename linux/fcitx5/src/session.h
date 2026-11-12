@@ -49,6 +49,8 @@ public:
     void clientDestroyed(Client &client);
     // Commits an open composition, then rebuilds the engine or resends the settings.
     void setConfig(const Config &config);
+    // How long Enter waits for the rerank; tests lengthen it.
+    void setEnterRerankWaitMs(int ms) { enterRerankWaitMs_ = ms; }
 
 private:
     void claim(Client &client);
@@ -65,6 +67,7 @@ private:
     bool composing_ = false;
     uint32_t lastVertical_ = 0;
     int32_t lastSelected_ = -1;
+    int enterRerankWaitMs_ = kEnterRerankWaitMs;
     // What the owner was last sent, to avoid resending an unchanged preedit.
     std::optional<std::tuple<std::string, size_t, size_t, size_t>> lastPreedit_;
 };

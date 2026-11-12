@@ -13,13 +13,18 @@ An fcitx5 input method built on the Shanjie core. Design: `docs/superpowers/spec
 
 From the repository root:
 
-    cmake -S linux/fcitx5 -B build/fcitx5 -DCMAKE_BUILD_TYPE=Release
+    cmake -S linux/fcitx5 -B build/fcitx5 -DCMAKE_BUILD_TYPE=Release -DFCITX_INSTALL_USE_FCITX_SYS_PATHS=ON
     cmake --build build/fcitx5 -j
     ctest --test-dir build/fcitx5 --output-on-failure
 
 The tests use the real lexicon and models and fail, rather than skip, when the models are missing.
 
 ## Install
+
+fcitx5 loads addon libraries only from its own library directory, so the addon must be installed
+there, not under `/usr/local`. `FCITX_INSTALL_USE_FCITX_SYS_PATHS=ON` (the default in this project,
+and spelled out in the configure command above) does that. The configure step prints the directory
+("Shanjie addon library goes to ..."); it must be the one that holds fcitx5's other addons.
 
     sudo cmake --install build/fcitx5
     fcitx5 -rd
@@ -35,5 +40,9 @@ are memory-mapped while fcitx5 runs.
 - The candidate window is always vertical; there is no expanded grid.
 - "Forget this word" is Super+Backspace, which some desktops reserve.
 - Applications that do not report surrounding text give the first word of a composition no left context.
+- Page Up and Page Down page the open candidate window; in any other state, or with a modifier, they
+  go to the application and the composition stays open (on macOS they commit it first).
+- Without Accelerate the semantic rerank of a short sentence takes about 100 ms here, the same as
+  Enter's wait for it, so an Enter pressed right after the last key may send the uncorrected text.
 - Changing the keyboard layout or a word pack blocks fcitx5 for about a second while the engine rebuilds.
 - No single-Shift English toggle, no automatic chat/formal choice per application.

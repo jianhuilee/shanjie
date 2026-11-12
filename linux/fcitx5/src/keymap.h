@@ -33,6 +33,9 @@ std::optional<ShanjieKey> translate(const KeyInput &in);
 // vertical candidate window is open.
 std::optional<ShanjieKey> translatePage(const KeyInput &in);
 
+// True for the Page Up and Page Down keys, whatever the modifiers.
+bool isPageKey(uint32_t evdev);
+
 // True for Shift, Control, Alt, Super and Caps Lock themselves.
 bool isModifierKey(uint32_t evdev);
 

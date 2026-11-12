@@ -63,6 +63,8 @@ std::optional<ShanjieKey> translatePage(const KeyInput &in) {
     return std::nullopt;
 }
 
+bool isPageKey(uint32_t evdev) { return evdev == 104 || evdev == 109; }
+
 bool isModifierKey(uint32_t evdev) {
     switch (evdev) {
     case 29: case 97:   // Control

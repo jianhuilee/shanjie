@@ -68,7 +68,9 @@ linux/fcitx5/
 | Settings | `fcitx5/conf/shanjie.conf` in the user config directory |
 
 All lookups go through fcitx5's standard path API. The documented install is system-wide; fcitx5 only
-loads addon libraries from its own library directory unless `FCITX_ADDON_DIRS` is set. When `data/lm`
+loads addon libraries from its own library directory unless `FCITX_ADDON_DIRS` is set. The build
+therefore sets `FCITX_INSTALL_USE_FCITX_SYS_PATHS=ON` by default (CMake's default prefix, `/usr/local`,
+would install a library fcitx5 never loads) and prints the addon directory at configure time. When `data/lm`
 exists at configure time the model files are installed to the system data directory as well. The model directory is looked up as a whole: the first directory that holds `bigram.sjlm` is
 used for every model file, because the files are paired by hash.
 
@@ -85,8 +87,12 @@ Turns a physical keycode and modifier state into a `ShanjieKey`, or reports "not
   The XKB layout and dead keys therefore cannot change what the core receives, as on macOS
   (`docs/spec/macos-shell.md` §3).
 - Special keys: Return and keypad Enter, Space, Backspace, Delete, Escape, the four arrows, Home, End, Tab.
-- Page Up and Page Down map to kinds 14 and 15 through a separate function. The engine unit sends them
-  only while the last applied output had `candidate_vertical` 1 and no modifier is held.
+- Page Up and Page Down map to kinds 14 and 15 through a separate function. The session sends them
+  only while the last applied output had `candidate_vertical` 1 and no modifier is held. In every other
+  state (no window, a prediction row, a composition, or a modifier held) they are passed to the
+  application and the composition is left exactly as it is, which is what the core does with these keys
+  when it is not showing a vertical window. They do not take the "outside the table" path, so they do
+  not commit. The macOS shell commits here; this shell deliberately does not.
 - Modifiers: Shift bit 0, Control bit 1, Alt bit 2, Super bit 3, Caps Lock bit 4. "Forget this word" is
   therefore Super+Backspace. A compositor that grabs Super combinations will hide it; that is a known
   limitation of the first version.
@@ -256,6 +262,9 @@ snapshots the setting calls return are not applied.
   surrogate pairs and out-of-range offsets.
 - **Core wrapper test** (real lexicon and models): both layouts type 你好 through `core_engine`; the
   settings sequence is sent after every build; a missing model directory still yields a typing engine.
+- **Rerank reaches the client**: a fixed key sequence whose n-gram decoding differs from its reranked
+  one, with the exact preedit and committed text asserted for asynchronous completion, for Enter's wait
+  and for a zero wait. A session that drops rerank results fails these.
 - **Session tests** (fake client, real core and models): `s u 3 c l 3` then Enter commits 你好; Space
   opens the vertical window and a pick works; a key outside the table commits; a lone modifier does not;
   a key in another client commits to the owner; a password client passes through; the ETen layout after
@@ -269,6 +278,9 @@ snapshots the setting calls return are not applied.
 ## 8. Known limitations
 
 - Vertical candidate window only.
+- The rerank runs on the core's plain (non-Accelerate) path: about 100 ms for a short sentence on the
+  development machine, the same as Enter's wait, so an Enter right after the last key can send the
+  uncorrected text.
 - Super+Backspace for forgetting may be taken by the compositor.
 - Without surrounding-text support in the application there is no left context, so the first word of a
   composition is decoded as a sentence start.
