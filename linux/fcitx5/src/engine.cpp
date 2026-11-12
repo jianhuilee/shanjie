@@ -106,7 +106,10 @@ std::optional<std::string> ShanjieClient::leftContext() const {
     if (!ic_->capabilityFlags().test(CapabilityFlag::SurroundingText)) return std::nullopt;
     const SurroundingText &st = ic_->surroundingText();
     if (!st.isValid()) return std::nullopt;
-    return shanjie::textBefore(st.text(), st.cursor(), kLeftContextChars);
+    // A terminal's surrounding text is commands and their output: only the trailing Han characters
+    // may go to the core (shanjie.h, set_left_context).
+    const bool terminal = ic_->capabilityFlags().test(CapabilityFlag::Terminal);
+    return shanjie::leftContextFor(st.text(), st.cursor(), kLeftContextChars, terminal);
 }
 
 // ---- ShanjieEngine
@@ -120,6 +123,12 @@ ShanjieEngine::ShanjieEngine(Instance *instance)
         [this](std::function<void()> f) { dispatcher_.schedule(std::move(f)); }, logCode);
     if (!session_->ready()) FCITX_ERROR() << "shanjie: no engine; every key is passed through";
     instance_->inputContextManager().registerProperty("shanjieClient", &factory_);
+    // A field can turn into a password or sensitive one while it holds the focus.
+    capabilityWatcher_ = instance_->watchEvent(
+        EventType::InputContextCapabilityChanged, EventWatcherPhase::Default, [this](Event &event) {
+            auto &icEvent = static_cast<InputContextEvent &>(event);
+            session_->capabilityChanged(*icEvent.inputContext()->propertyFor(&factory_));
+        });
 }
 
 ShanjieEngine::~ShanjieEngine() = default;

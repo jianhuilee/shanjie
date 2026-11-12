@@ -42,4 +42,56 @@ std::string textBefore(std::string_view text, uint32_t cursorChars, uint32_t max
     return std::string(text.substr(from, end - from));
 }
 
+namespace {
+
+bool isHan(uint32_t c) {
+    return (c >= 0x3400 && c <= 0x4DBF) || (c >= 0x4E00 && c <= 0x9FFF) || (c >= 0xF900 && c <= 0xFAFF) ||
+           (c >= 0x20000 && c <= 0x2A6DF) || (c >= 0x2A700 && c <= 0x2EBEF) || (c >= 0x30000 && c <= 0x3134F) ||
+           (c >= 0x2F800 && c <= 0x2FA1F) || c == 0x3007;
+}
+
+// Decodes the character at `i`; 0xFFFFFFFF for a malformed or truncated one. Sets `len` to its bytes.
+uint32_t decodeAt(std::string_view s, size_t i, size_t &len) {
+    const unsigned char c = static_cast<unsigned char>(s[i]);
+    len = charLen(c);
+    if (len == 1) return c < 0x80 ? c : 0xFFFFFFFFu;
+    if (i + len > s.size()) {
+        len = 1;
+        return 0xFFFFFFFFu;
+    }
+    uint32_t cp = c & (0xFFu >> (len + 1));
+    for (size_t k = 1; k < len; k++) {
+        const unsigned char cont = static_cast<unsigned char>(s[i + k]);
+        if ((cont & 0xC0) != 0x80) {
+            len = 1;
+            return 0xFFFFFFFFu;
+        }
+        cp = (cp << 6) | (cont & 0x3Fu);
+    }
+    return cp;
+}
+
+} // namespace
+
+std::string trailingHan(std::string_view text) {
+    size_t start = text.size(); // start of the current run of Han characters, text.size() when none
+    size_t i = 0;
+    while (i < text.size()) {
+        size_t len = 1;
+        const uint32_t cp = decodeAt(text, i, len);
+        if (isHan(cp)) {
+            if (start == text.size()) start = i;
+        } else {
+            start = text.size();
+        }
+        i += len;
+    }
+    return std::string(text.substr(start));
+}
+
+std::string leftContextFor(std::string_view text, uint32_t cursorChars, uint32_t maxChars, bool terminal) {
+    std::string before = textBefore(text, cursorChars, maxChars);
+    return terminal ? trailingHan(before) : before;
+}
+
 } // namespace shanjie

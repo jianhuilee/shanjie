@@ -42,7 +42,9 @@ linux/fcitx5/
   test/
 ```
 
-- CMake finds `Fcitx5Core`, runs `cargo build --release --locked -p core` as a custom target, and links
+- CMake finds `Fcitx5Core`, runs `cargo build --release --locked -p core --target-dir <repo>/target` as
+  a custom target (the directory is explicit because cargo otherwise follows `CARGO_TARGET_DIR` and
+  `build.target-dir`, and the link would then miss the archive or pick up a stale one), and links
   `target/release/libcore.a` into one shared addon, `shanjie.so`, with the native libraries that
   `cargo rustc -- --print native-static-libs` reports.
 - The header is included from `core/include/` in place. There is no copy, so the header and the static
@@ -197,7 +199,16 @@ main thread.
   call `set_left_context`; translate; a key outside the table commits an open composition with
   `reset(0)` and passes through; otherwise `shanjie_engine_key` and apply.
 - **Left context**: when the context supports surrounding text and it is valid, the text before the
-  cursor, at most 64 characters; otherwise none.
+  cursor, at most 64 characters; otherwise none. In a terminal (fcitx5's `Terminal` capability) the
+  surrounding text is commands and their output, so only the run of Han characters right before the
+  cursor is passed on, as the C ABI requires (`shanjie.h`, `set_left_context`); the Han ranges are the
+  core's (`core/src/learn.rs`, `is_han`).
+- **Sensitive fields**: the password-or-sensitive check gates every path that could send text to a
+  context, not only keys. A candidate click and a finished rerank job in such a context discard the
+  composition instead of updating it; a commit that would land there (owner change, settings change,
+  input method switch) is turned into a discard. The adapter watches fcitx5's capability-changed event,
+  so a field that becomes sensitive while it owns a composition loses it at once and its pending rerank
+  jobs are cancelled.
 
 ## 5. Applying an output
 

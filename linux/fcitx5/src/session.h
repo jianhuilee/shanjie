@@ -42,9 +42,13 @@ public:
     // A click on candidate `index` of the list last shown to `client`.
     void pick(Client &client, uint32_t index);
     // Ends the composition if `client` owns it: commit sends what is shown, otherwise it is dropped.
+    // Nothing is ever committed into a password or sensitive field: there it is always dropped.
     // Also the answer to a reset the application asks for while it keeps the focus. Pending rerank jobs
     // are cancelled, so a late result cannot bring the text back.
     void finish(Client &client, bool commit);
+    // `client`'s field changed kind. If it became a password or sensitive field while it owns a
+    // composition, the composition is dropped and pending rerank jobs are cancelled.
+    void capabilityChanged(Client &client);
     // `client` is going away; drops a composition it owns.
     void clientDestroyed(Client &client);
     // Commits an open composition, then rebuilds the engine or resends the settings.

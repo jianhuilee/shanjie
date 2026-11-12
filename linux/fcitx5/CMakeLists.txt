@@ -11,9 +11,12 @@ find_package(Threads REQUIRED)
 
 # --- The Rust core: built by cargo, linked as a static library. Header and library come from the same
 # checkout (docs/spec/c-abi.md §2.1).
-set(CORE_LIB "${REPO_ROOT}/target/release/libcore.a")
+# The target directory is passed explicitly: cargo otherwise honours CARGO_TARGET_DIR and
+# build.target-dir, and the archive linked below would then be missing or a stale one from another build.
+set(CORE_TARGET_DIR "${REPO_ROOT}/target")
+set(CORE_LIB "${CORE_TARGET_DIR}/release/libcore.a")
 add_custom_target(shanjie_core_build
-    COMMAND cargo build --release --locked -p core
+    COMMAND cargo build --release --locked -p core --target-dir "${CORE_TARGET_DIR}"
     WORKING_DIRECTORY "${REPO_ROOT}"
     BYPRODUCTS "${CORE_LIB}"
     COMMENT "cargo build -p core")

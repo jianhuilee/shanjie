@@ -81,6 +81,10 @@ bool Session::handleKey(Client &client, const KeyInput &in) {
 
 void Session::pick(Client &client, uint32_t index) {
     if (!engine_.ready() || owner_ != &client) return;
+    if (client.isPassword()) {
+        finish(client, false); // the field became sensitive after the list was shown
+        return;
+    }
     const Result r = engine_.pick(index);
     if (r.code == 2) return; // stale click: state unchanged
     if (r.code != 0) {
@@ -93,12 +97,17 @@ void Session::pick(Client &client, uint32_t index) {
 void Session::finish(Client &client, bool commit) {
     if (!engine_.ready() || owner_ != &client || !composing_) return;
     runner_->cancelAll();
+    if (client.isPassword()) commit = false;
     const Result r = engine_.reset(commit ? 0 : 1);
     if (r.code != 0) {
         fail(client, "shanjie_engine_reset", r.code);
         return;
     }
     apply(client, r.out);
+}
+
+void Session::capabilityChanged(Client &client) {
+    if (owner_ == &client && client.isPassword()) finish(client, false);
 }
 
 void Session::clientDestroyed(Client &client) {
@@ -179,6 +188,12 @@ void Session::fail(Client &client, const char *what, int32_t code) {
 }
 
 void Session::onRerankDone(ShanjieRerankJob *job) {
+    if (owner_ && owner_->isPassword()) {
+        // The field became sensitive while the job ran: no update reaches it, the composition goes.
+        shanjie_rerank_free(job);
+        finish(*owner_, false);
+        return;
+    }
     const Result r = engine_.ready() ? engine_.applyJob(job) : Result{SHANJIE_NO_CHANGE, {}};
     shanjie_rerank_free(job);
     if (r.code == SHANJIE_NO_CHANGE) return;

@@ -4,6 +4,8 @@
 #include <string>
 
 #include <fcitx-utils/eventdispatcher.h>
+#include <fcitx-utils/handlertable.h>
+#include <fcitx/event.h>
 #include <fcitx/addonfactory.h>
 #include <fcitx/addonmanager.h>
 #include <fcitx/inputcontext.h>
@@ -59,6 +61,7 @@ private:
     EventDispatcher dispatcher_;                // before session_: outlives it
     std::unique_ptr<shanjie::Session> session_; // before factory_: outlives the per-context clients
     FactoryFor<ShanjieClient> factory_;
+    std::unique_ptr<HandlerTableEntry<EventHandler>> capabilityWatcher_; // last: removed first
 };
 
 class ShanjieFactory : public AddonFactory {

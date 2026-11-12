@@ -212,6 +212,61 @@ int main() {
         CHECK(c.commits.empty() && c.preedit.empty() && c.preeditSets == 0);
     }
 
+    // A field that turns sensitive while it owns a composition: a click, a late rerank result, an
+    // owner change and a settings change all drop the composition and send the field nothing more.
+    {
+        FakeClient c;
+        press(s, c, {KS, KU, K3, KSpace});
+        CHECK(c.candidatesVisible && !c.preedit.empty());
+        const int sets = c.preeditSets;
+        c.password = true;
+        s.pick(c, 0);
+        CHECK(c.commits.empty() && c.preedit.empty() && !c.candidatesVisible && c.preeditSets == sets);
+        c.password = false;
+        press(s, c, {KS, KU, K3, KC, KL, K3, KEnter});
+        CHECK(c.commits.size() == 1 && c.commits[0] == kNihao); // nothing of the dropped composition
+    }
+    {
+        FakeClient c;
+        press(s, c, kRerankKeys);
+        CHECK(c.preedit == kBeforeRerank);
+        const int sets = c.preeditSets;
+        c.password = true;
+        for (int i = 0; i < 1000 && !c.preedit.empty(); i++) {
+            pump.run();
+            std::this_thread::sleep_for(5ms);
+        }
+        CHECK(c.preedit.empty() && c.commits.empty() && c.preeditSets == sets); // dropped, never updated
+    }
+    {
+        FakeClient c;
+        press(s, c, kRerankKeys);
+        const int sets = c.preeditSets;
+        s.capabilityChanged(c); // not sensitive: nothing happens
+        CHECK(c.preedit == kBeforeRerank);
+        c.password = true;
+        s.capabilityChanged(c);
+        CHECK(c.preedit.empty() && c.commits.empty() && c.preeditSets == sets);
+        for (int i = 0; i < 60; i++) {
+            pump.run();
+            std::this_thread::sleep_for(5ms);
+        }
+        CHECK(c.preedit.empty() && c.commits.empty() && c.preeditSets == sets); // jobs were cancelled
+    }
+    {
+        FakeClient a, b;
+        press(s, a, {KS, KU, K3});
+        a.password = true;
+        CHECK(s.handleKey(b, key(KC))); // the owner changes; nothing is committed into the sensitive field
+        CHECK(a.commits.empty() && a.preedit.empty());
+        s.finish(b, false);
+        FakeClient c;
+        press(s, c, {KS, KU, K3});
+        c.password = true;
+        s.setConfig(Config{}); // a settings change commits an open composition, but not there
+        CHECK(c.commits.empty() && c.preedit.empty());
+    }
+
     // An unchanged preedit is not resent.
     {
         FakeClient c;
