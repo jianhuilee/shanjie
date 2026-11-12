@@ -1,0 +1,39 @@
+# Shanjie for fcitx5 (Linux)
+
+An fcitx5 input method built on the Shanjie core. Design: `docs/superpowers/specs/2026-11-12-fcitx5-port-design.md`.
+
+## Requirements
+
+- fcitx5 5.1 with its development package (Debian and Ubuntu: `libfcitx5core-dev`)
+- CMake 3.21 or later, a C++20 compiler
+- The Rust toolchain named in `CONTRIBUTING.md`
+- The model files in `data/lm/` (download commands in `CONTRIBUTING.md`; the `curl` form needs no account)
+
+## Build and test
+
+From the repository root:
+
+    cmake -S linux/fcitx5 -B build/fcitx5 -DCMAKE_BUILD_TYPE=Release
+    cmake --build build/fcitx5 -j
+    ctest --test-dir build/fcitx5 --output-on-failure
+
+The tests use the real lexicon and models and fail, rather than skip, when the models are missing.
+
+## Install
+
+    sudo cmake --install build/fcitx5
+    fcitx5 -rd
+
+Then add "Shanjie Zhuyin" in the fcitx5 configuration tool. Settings are under the input method's
+configure button. The learning file is kept in `shanjie/learn` under fcitx5's user data directory.
+
+To update the models later, replace the files by rename, not by writing in place: the trigram tables
+are memory-mapped while fcitx5 runs.
+
+## Known limitations
+
+- The candidate window is always vertical; there is no expanded grid.
+- "Forget this word" is Super+Backspace, which some desktops reserve.
+- Applications that do not report surrounding text give the first word of a composition no left context.
+- Changing the keyboard layout or a word pack blocks fcitx5 for about a second while the engine rebuilds.
+- No single-Shift English toggle, no automatic chat/formal choice per application.
