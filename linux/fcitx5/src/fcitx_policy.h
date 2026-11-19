@@ -22,6 +22,8 @@ inline bool commitOnDeactivate(const InputContextEvent &event, CapabilityFlags f
         if (static_cast<const CapabilityEvent &>(event).newFlags().testAny(CapabilityFlag::PasswordOrSensitive))
             return false;
         break;
+    case EventType::InputContextDestroyed:
+        return false; // no application is left to receive it
     case EventType::InputContextSwitchInputMethod:
         // A switch the person asked for sends what is shown; one forced by a capability change does not.
         return static_cast<const InputContextSwitchInputMethodEvent &>(event).reason() !=

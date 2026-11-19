@@ -54,6 +54,10 @@ int main() {
     // Leaving a password field: the flags are still the password ones.
     CHECK(!commitOnDeactivate(CapabilityAboutToChangeEvent(nullptr, password, plain), password));
 
+    // A context going away never commits: there is no application left to receive it.
+    CHECK(!commitOnDeactivate(InputContextEvent(nullptr, EventType::InputContextDestroyed), panelOnly));
+    CHECK(!commitOnDeactivate(InputContextEvent(nullptr, EventType::InputContextDestroyed), plain));
+
     // The preedit changes place only when the Preedit flag itself changes.
     CHECK(preeditMoves(CapabilityAboutToChangeEvent(nullptr, plain, panelOnly)));
     CHECK(preeditMoves(CapabilityChangedEvent(nullptr, panelOnly, plain)));

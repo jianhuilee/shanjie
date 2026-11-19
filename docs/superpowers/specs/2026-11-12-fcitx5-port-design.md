@@ -45,7 +45,7 @@ linux/fcitx5/
 - CMake finds `Fcitx5Core`, runs `cargo build --release --locked -p core --target-dir <repo>/target` as
   a custom target (the directory is explicit because cargo otherwise follows `CARGO_TARGET_DIR` and
   `build.target-dir`, and the link would then miss the archive or pick up a stale one), and links
-  `target/release/libcore.a` into one shared addon, `shanjie.so`, with the native libraries that
+  `target/release/libcore.a` into one shared addon, `libshanjie.so`, with the native libraries that
   `cargo rustc -- --print native-static-libs` reports.
 - The header is included from `core/include/` in place. There is no copy, so the header and the static
   library always come from the same commit (`docs/spec/c-abi.md` §2.1).
@@ -61,7 +61,7 @@ linux/fcitx5/
 
 | What | Where |
 |---|---|
-| Addon | `${libdir}/fcitx5/shanjie.so` |
+| Addon | `${libdir}/fcitx5/libshanjie.so` |
 | Addon and input method entries | `${datadir}/fcitx5/addon/shanjie.conf`, `${datadir}/fcitx5/inputmethod/shanjie.conf` |
 | Lexicon (`data/lexicon`) | `${datadir}/fcitx5/shanjie/lexicon/` |
 | Word packs (`data/packs/*-add.tsv`) | `${datadir}/fcitx5/shanjie/packs/` |
@@ -165,7 +165,8 @@ One worker thread and a slot for the newest job.
   event dispatcher. The main loop calls `rerank_apply`; code 0 applies the snapshot to the owner context
   if it still exists, code 5 does nothing. The job is then freed. A job is never touched by two threads
   at once.
-- **Enter's wait** (no selection open): one deadline of 100 ms covers every job in flight, the running
+- **Enter's wait** (no selection open, rerank on; a settings change that recomputes the composition
+  cancels the jobs before it, as macOS drops its pending job when rerank goes off): one deadline of 100 ms covers every job in flight, the running
   one and the newer one queued behind it. The wait ends when nothing is running or queued, and hands
   back the newest finished job, which the session applies on the main thread at once. An older result
   that a newer one superseded is freed, never applied (the core would answer "no change"). After the
@@ -205,7 +206,8 @@ main thread.
   the next key nor a late rerank result brings the old text back. A reset from a context that is not
   the owner does nothing.
 - **Modifier keys** pressed alone are ignored: they neither reach the core nor end the composition.
-- **Key path**: ignore releases; before each key sample the learning gate and call `set_learning`
+- **Key path**: ignore releases; before each key, each candidate click and on every settings change
+  sample the learning gate and call `set_learning`
   (on when the setting is on and the context is not a password field); at the start of a composition
   call `set_left_context`; translate; a key outside the table commits an open composition with
   `reset(0)` and passes through; otherwise `shanjie_engine_key` and apply.

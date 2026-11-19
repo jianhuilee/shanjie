@@ -1,4 +1,6 @@
 #include <chrono>
+#include <filesystem>
+#include <unistd.h>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -489,6 +491,51 @@ int main() {
         CHECK(c.commits.size() == 1 && c.commits[0] == recomputed);
         s.setConfig(Config{});
         CHECK(c.commits.size() == 1); // nothing open: nothing to send
+    }
+
+    // Rerank turned off with a job on its way: Enter does not wait for it, and sends the n-gram's text.
+    {
+        FakeClient c;
+        press(s, c, kRerankKeys);
+        Config noRerank;
+        noRerank.rerank = false;
+        s.setConfig(noRerank);
+        const int waits = s.enterWaits();
+        CHECK(s.handleKey(c, key(KEnter)));
+        CHECK(s.enterWaits() == waits);
+        CHECK(c.commits.size() == 1 && c.commits[0] == kBeforeRerank);
+        s.setConfig(Config{});
+        for (int i = 0; i < 40; i++) {
+            pump.run();
+            std::this_thread::sleep_for(5ms);
+        }
+        CHECK(c.commits.size() == 1);
+    }
+
+    // The learning switch reaches the core at once, also for a click: learning turned on in the settings
+    // with a list open, then an item clicked, learns the choice (as macOS applies its gate before a pick).
+    {
+        namespace fs = std::filesystem;
+        const fs::path dir = fs::temp_directory_path() / ("shanjie-session-learn-" + std::to_string(::getpid()));
+        fs::remove_all(dir);
+        Paths learning = paths;
+        learning.learn = dir.string();
+        Config off;
+        off.learning = false;
+        Session ls(learning, off, [&](std::function<void()> f) { pump.post(std::move(f)); }, {});
+        FakeClient c;
+        c.left = "\xe6\x88\x91"; // 我: the choice is learned under this text
+        press(ls, c, {KS, KU, K3, KSpace});
+        CHECK(c.shown.candidates.size() >= 3);
+        const std::string third = c.shown.candidates.size() >= 3 ? c.shown.candidates[2] : "";
+        ls.setConfig(Config{}); // learning on
+        ls.pick(c, 2);
+        CHECK(ls.handleKey(c, key(KEnter)));
+        CHECK(c.commits.size() == 1 && c.commits[0] == third);
+        press(ls, c, {KS, KU, K3, KSpace});
+        CHECK(!c.shown.candidates.empty() && c.shown.candidates[0] == third); // learned: first now
+        ls.finish(c, false);
+        fs::remove_all(dir);
     }
 
     // The ETen layout after a settings change; an open composition is committed first.

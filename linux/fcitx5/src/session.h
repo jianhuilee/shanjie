@@ -73,6 +73,8 @@ public:
     // (tests).
     int engineBuilds() const { return engineBuilds_; }
     int engineSwaps() const { return engineSwaps_; }
+    // Times Enter waited for the rerank (tests).
+    int enterWaits() const { return enterWaits_; }
     int learningReopens() const { return engine_.learningReopens(); }
     // How long Enter waits for the rerank; tests lengthen it.
     void setEnterRerankWaitMs(int ms) { enterRerankWaitMs_ = ms; }
@@ -121,6 +123,7 @@ private:
     Wanted readyFor_;
     int engineBuilds_ = 0;
     int engineSwaps_ = 0;
+    int enterWaits_ = 0;
     // Callbacks posted to the main loop check this before touching the session.
     std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
     // The two below are destroyed before every member above, so no task runs once those go.

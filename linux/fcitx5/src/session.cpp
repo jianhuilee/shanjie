@@ -78,10 +78,11 @@ bool Session::handleKey(Client &client, const KeyInput &in) {
         const std::optional<std::string> left = client.leftContext();
         engine_.setLeftContext(left ? left->c_str() : nullptr);
     }
-    if (key->kind == KindEnter && composing_ && lastSelected_ < 0) {
+    if (key->kind == KindEnter && composing_ && lastSelected_ < 0 && config_.rerank) {
         // Let the rerank catch up, so what is sent is what it would have shown. One deadline covers a
         // running job and the newer one queued behind it; the newest result comes back here and is not
         // delivered a second time. Not with a selection open: the core would not apply it.
+        enterWaits_++;
         if (ShanjieRerankJob *job = runner_->waitFor(std::chrono::milliseconds(enterRerankWaitMs_))) {
             onRerankDone(job);
             if (!composing_) return false; // the apply failed and the composition is gone
@@ -105,6 +106,7 @@ void Session::pick(Client &client, uint32_t index) {
         finish(client, false); // the field became sensitive after the list was shown
         return;
     }
+    engine_.setLearning(config_.learning); // the gate, sampled before a pick as before a key
     const Result r = engine_.pick(index);
     if (r.code == 2) return; // stale click: state unchanged
     if (r.code != 0) {
@@ -233,6 +235,7 @@ void Session::clientDestroyed(Client &client) {
     lastSelected_ = -1;
     lastCount_ = 0;
     lastPreedit_.reset();
+    lastShown_ = Output();
     scheduleInstall();
 }
 
@@ -272,6 +275,12 @@ void Session::setConfig(const Config &config) {
     if (owner_ && owner_->isPassword()) finish(*owner_, false);
     const Result r = engine_.applyChanges(config_, config);
     config_ = config;
+    // The learning switch reaches the core now, not at the next key: turning it off drops the pending
+    // learns of an open composition (shanjie.h, set_learning).
+    engine_.setLearning(config_.learning);
+    // A setter that recomputed the composition made every earlier rerank job stale; with rerank off no
+    // new one comes, and Enter must not wait for the old ones.
+    if (r.code != SHANJIE_NO_CHANGE) runner_->cancelAll();
     if (!owner_) return;
     if (r.code == SHANJIE_NO_CHANGE) {
         // Only the shell's own settings changed. The candidate labels are among them: a list on screen
@@ -338,6 +347,7 @@ void Session::fail(Client &client, const char *what, int32_t code) {
     lastVertical_ = 0;
     lastSelected_ = -1;
     lastCount_ = 0;
+    lastShown_ = Output();
     runner_->cancelAll();
     scheduleInstall();
 }

@@ -63,7 +63,9 @@ set(LEXICON_FILES mcbpmf-data.txt overlay-add.tsv sandhi-add.tsv names-add.tsv v
 list(TRANSFORM LEXICON_FILES PREPEND "${REPO_ROOT}/data/lexicon/")
 install(FILES ${LEXICON_FILES} DESTINATION "${FCITX_INSTALL_PKGDATADIR}/shanjie/lexicon")
 
-set(PACK_FILES acg-add.tsv quotes-add.tsv it-add.tsv meme-add.tsv beauty-add.tsv)
+# The packs, with the per-word sources and the manifests the attribution text points to (as the app ships them).
+set(PACK_FILES acg-add.tsv acg-sources.tsv acg.json quotes-add.tsv quotes.json it-add.tsv it-sources.tsv it.json
+    meme-add.tsv meme-sources.tsv meme.json beauty-add.tsv beauty-sources.tsv beauty.json)
 list(TRANSFORM PACK_FILES PREPEND "${REPO_ROOT}/data/packs/")
 install(FILES ${PACK_FILES} DESTINATION "${FCITX_INSTALL_PKGDATADIR}/shanjie/packs")
 
@@ -98,7 +100,13 @@ if(ATTR_END EQUAL -1)
 endif()
 math(EXPR ATTR_END "${ATTR_END} + 1")
 string(SUBSTRING "${ATTR_TEXT}" 0 ${ATTR_END} ATTR_TEXT)
-file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/CC-BY-SA-4.0-attribution.txt" "${ATTR_TEXT}")
+# The app script appends the name-suggestion-index notice after the heredoc; the text promises it "in full".
+if(NOT BUILD_APP_TEXT MATCHES "cat LICENSES/name-suggestion-index-BSD-3-Clause.txt >> \"\\$RES/LICENSES/CC-BY-SA-4.0-attribution.txt\"")
+    message(FATAL_ERROR "scripts/build-app.sh no longer appends the name-suggestion-index notice to the attribution text")
+endif()
+file(READ "${REPO_ROOT}/LICENSES/name-suggestion-index-BSD-3-Clause.txt" NSI_TEXT)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${REPO_ROOT}/LICENSES/name-suggestion-index-BSD-3-Clause.txt")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/CC-BY-SA-4.0-attribution.txt" "${ATTR_TEXT}${NSI_TEXT}")
 install(FILES "${REPO_ROOT}/LICENSE" "${REPO_ROOT}/LICENSES/data.md" "${REPO_ROOT}/LICENSES/McBopomofo-MIT.txt"
               "${REPO_ROOT}/LICENSES/name-suggestion-index-BSD-3-Clause.txt"
               "${CMAKE_CURRENT_BINARY_DIR}/CC-BY-SA-4.0-attribution.txt"
