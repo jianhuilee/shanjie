@@ -83,6 +83,8 @@ private:
     int enterRerankWaitMs_ = kEnterRerankWaitMs;
     // What the owner was last sent, to avoid resending an unchanged preedit.
     std::optional<std::tuple<std::string, size_t, size_t, size_t>> lastPreedit_;
+    // The list last shown to the owner (empty when none), to relabel it when the selection keys change.
+    Output lastShown_;
 };
 
 } // namespace shanjie

@@ -144,21 +144,38 @@ void Session::clientDestroyed(Client &client) {
 }
 
 void Session::setConfig(const Config &config) {
-    if (owner_) finish(*owner_, true);
     const bool rebuild = CoreEngine::needsRebuild(config_, config) || !engine_.ready();
-    config_ = config;
     if (rebuild) {
+        // A new engine cannot take over the composition: it goes to its owner first.
+        if (owner_) finish(*owner_, true);
+        config_ = config;
         runner_->cancelAll(); // jobs of the old engine must not reach the new one
         engine_.build(paths_, config_);
         composing_ = false;
         lastVertical_ = 0;
         lastSelected_ = -1;
         lastCount_ = 0;
-    lastCount_ = 0;
         lastPreedit_.reset();
-    } else {
-        engine_.applySettings(config_);
+        return;
     }
+    // The same engine: every setter recomputes the open composition, which stays open and is shown
+    // again as the new settings make it (macOS does the same). Nothing is ever kept in a password or
+    // sensitive field, so a composition there is dropped first.
+    if (owner_ && owner_->isPassword()) finish(*owner_, false);
+    const Result r = engine_.applyChanges(config_, config);
+    config_ = config;
+    if (!owner_) return;
+    if (r.code == SHANJIE_NO_CHANGE) {
+        // Only the shell's own settings changed. The candidate labels are among them: a list on screen
+        // is shown again with the new keys.
+        if (lastCount_ > 0) owner_->showCandidates(lastShown_, selectionKeyChars(config_.selectionKeys));
+        return;
+    }
+    if (r.code != 0) {
+        fail(*owner_, "applyChanges", r.code);
+        return;
+    }
+    if (composing_ || lastCount_ > 0) apply(*owner_, r.out);
 }
 
 void Session::apply(Client &client, const Output &out) {
@@ -187,8 +204,10 @@ void Session::apply(Client &client, const Output &out) {
 
     if (out.candidates.empty()) {
         client.hideCandidates();
+        lastShown_ = Output();
     } else {
         client.showCandidates(out, selectionKeyChars(config_.selectionKeys));
+        lastShown_ = out;
     }
     ShanjieRerankJob *job = nullptr;
     const int32_t code = engine_.takeJob(&job);

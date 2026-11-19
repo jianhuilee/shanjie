@@ -99,24 +99,55 @@ bool CoreEngine::needsRebuild(const Config &a, const Config &b) {
     return a.layout != b.layout || a.packs != b.packs;
 }
 
-void CoreEngine::applySettings(const Config &c) {
-    if (!engine_) return;
+Result CoreEngine::applySettings(const Config &c) { return send(c, nullptr); }
+
+Result CoreEngine::applyChanges(const Config &from, const Config &to) { return send(to, &from); }
+
+Result CoreEngine::send(const Config &c, const Config *from) {
+    Result merged;
+    if (!engine_) {
+        merged.code = 1;
+        return merged;
+    }
     ShanjieEngine *e = engine_;
-    auto send = [&](const char *what, auto &&f) { note(what, call(f).code); };
-    send("set_demote", [&](ShanjieOutput **o) { return shanjie_engine_set_demote(e, c.demote, o); });
-    send("set_prediction", [&](ShanjieOutput **o) { return shanjie_engine_set_prediction(e, c.prediction, o); });
-    send("set_abbreviation", [&](ShanjieOutput **o) { return shanjie_engine_set_abbreviation(e, c.abbreviation, o); });
-    send("set_english", [&](ShanjieOutput **o) { return shanjie_engine_set_english(e, c.english, o); });
-    send("set_english_overwrite", [&](ShanjieOutput **o) { return shanjie_engine_set_english_overwrite(e, c.englishOverwrite, o); });
-    send("set_english_key_order", [&](ShanjieOutput **o) { return shanjie_engine_set_english_key_order(e, c.englishKeyOrder, o); });
-    send("set_english_reversal_guard", [&](ShanjieOutput **o) { return shanjie_engine_set_english_reversal_guard(e, c.englishReversalGuard, o); });
-    send("set_fuzzy", [&](ShanjieOutput **o) { return shanjie_engine_set_fuzzy(e, c.fuzzy, o); });
-    // fcitx5's panel has no grid: always the core's vertical window (design §5.2).
-    send("set_candidate_vertical", [&](ShanjieOutput **o) { return shanjie_engine_set_candidate_vertical(e, 1, o); });
-    send("set_key_scheme", [&](ShanjieOutput **o) { return shanjie_engine_set_key_scheme(e, c.keyScheme, o); });
-    send("set_rerank", [&](ShanjieOutput **o) { return shanjie_engine_set_rerank(e, c.rerank, o); });
-    send("set_rerank_level", [&](ShanjieOutput **o) { return shanjie_engine_set_rerank_level(e, c.rerankLevel, o); });
-    send("set_profile", [&](ShanjieOutput **o) { return shanjie_engine_set_profile(e, c.profile, o); });
+    std::string commits;
+    bool sent = false;
+    // `differs` is whether the value changed; without `from` every setting is sent.
+    auto set = [&](bool differs, const char *what, auto &&f) {
+        if (from && !differs) return;
+        Result r = call(f);
+        note(what, r.code);
+        if (r.code == 4) merged.code = 4;
+        if (r.code != 0) return; // 2: a value out of range changes nothing
+        sent = true;
+        commits += r.out.commit;
+        merged.out = std::move(r.out);
+    };
+    const Config &f = from ? *from : c;
+    set(f.demote != c.demote, "set_demote", [&](ShanjieOutput **o) { return shanjie_engine_set_demote(e, c.demote, o); });
+    set(f.prediction != c.prediction, "set_prediction",
+        [&](ShanjieOutput **o) { return shanjie_engine_set_prediction(e, c.prediction, o); });
+    set(f.abbreviation != c.abbreviation, "set_abbreviation",
+        [&](ShanjieOutput **o) { return shanjie_engine_set_abbreviation(e, c.abbreviation, o); });
+    set(f.english != c.english, "set_english", [&](ShanjieOutput **o) { return shanjie_engine_set_english(e, c.english, o); });
+    set(f.englishOverwrite != c.englishOverwrite, "set_english_overwrite",
+        [&](ShanjieOutput **o) { return shanjie_engine_set_english_overwrite(e, c.englishOverwrite, o); });
+    set(f.englishKeyOrder != c.englishKeyOrder, "set_english_key_order",
+        [&](ShanjieOutput **o) { return shanjie_engine_set_english_key_order(e, c.englishKeyOrder, o); });
+    set(f.englishReversalGuard != c.englishReversalGuard, "set_english_reversal_guard",
+        [&](ShanjieOutput **o) { return shanjie_engine_set_english_reversal_guard(e, c.englishReversalGuard, o); });
+    set(f.fuzzy != c.fuzzy, "set_fuzzy", [&](ShanjieOutput **o) { return shanjie_engine_set_fuzzy(e, c.fuzzy, o); });
+    // fcitx5's panel has no grid: always the core's vertical window (design §5.2). Never changes.
+    set(false, "set_candidate_vertical", [&](ShanjieOutput **o) { return shanjie_engine_set_candidate_vertical(e, 1, o); });
+    set(f.keyScheme != c.keyScheme, "set_key_scheme",
+        [&](ShanjieOutput **o) { return shanjie_engine_set_key_scheme(e, c.keyScheme, o); });
+    set(f.rerank != c.rerank, "set_rerank", [&](ShanjieOutput **o) { return shanjie_engine_set_rerank(e, c.rerank, o); });
+    set(f.rerankLevel != c.rerankLevel, "set_rerank_level",
+        [&](ShanjieOutput **o) { return shanjie_engine_set_rerank_level(e, c.rerankLevel, o); });
+    set(f.profile != c.profile, "set_profile", [&](ShanjieOutput **o) { return shanjie_engine_set_profile(e, c.profile, o); });
+    if (merged.code == 0 && !sent) merged.code = SHANJIE_NO_CHANGE;
+    merged.out.commit = std::move(commits);
+    return merged;
 }
 
 Result CoreEngine::key(ShanjieKey key) {

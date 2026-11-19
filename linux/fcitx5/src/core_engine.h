@@ -69,8 +69,15 @@ public:
 
     // True when going from `a` to `b` needs build() rather than applySettings().
     static bool needsRebuild(const Config &a, const Config &b);
-    // Sends every setting that does not need a rebuild. Call with an empty composition.
-    void applySettings(const Config &config);
+    // Sends every setting that does not need a rebuild. Every setter recomputes the composition, so it
+    // may be called while one is open: the result is the last setter's snapshot, with the commits of all
+    // of them in order (a setter can end an English run that reaches the 128th unit). Code 4 when any
+    // setter answered 4 (the core has then discarded the composition), else 0.
+    Result applySettings(const Config &config);
+    // The same, sending only the settings that differ between `from` and `to`, as the macOS shell calls
+    // one setter per change: a setter recomputes the composition even when its value is unchanged
+    // (set_profile closes an open candidate window). SHANJIE_NO_CHANGE when nothing differs.
+    Result applyChanges(const Config &from, const Config &to);
 
     Result key(ShanjieKey key);
     Result pick(uint32_t index);
@@ -86,6 +93,7 @@ public:
 private:
     ShanjieEngine *create(const Paths &paths, uint32_t layout, uint32_t packs);
     void note(const char *what, int32_t code) const;
+    Result send(const Config &config, const Config *from);
 
     Log log_;
     ShanjieEngine *engine_ = nullptr;

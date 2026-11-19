@@ -139,7 +139,7 @@ the same call; no output pointer escapes.
 ### 4.4 `settings`
 
 An fcitx5 `Configuration` (§6). Changing layout or packs rebuilds the engine after committing the open
-composition; every other option is sent to the live engine.
+composition; every other option is sent to the live engine without ending the composition (§6).
 
 ### 4.5 `candidates`
 
@@ -289,8 +289,13 @@ Input text, candidates, model paths and job pointers are never logged (`docs/spe
 | Key habit: Shanjie, Microsoft Zhuyin | `set_key_scheme` | no |
 | Candidate selection keys: digits, `asdfghjkl;` | none (shell only, §6.1) | no |
 
-Defaults follow the macOS app's defaults. A settings change first commits an open composition, so the
-snapshots the setting calls return are not applied.
+Defaults follow the macOS app's defaults. A change that keeps the engine leaves an open composition
+open: only the setters whose value changed are called (`CoreEngine::applyChanges`), as the macOS shell
+calls one setter per change, because every setter recomputes the composition even with an unchanged
+value (`set_profile` and turning prediction off close an open candidate window). The last snapshot is
+applied, with the commits of all of them in order; code 4 from any setter ends the composition as any
+failure does. A change only the shell sees (the selection keys) shows the list on screen again with the
+new labels. A composition in a password or sensitive field is dropped first, as everywhere.
 
 ### 6.1 Letter selection keys
 

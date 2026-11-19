@@ -461,6 +461,36 @@ int main() {
         s.setConfig(Config{});
     }
 
+    // A settings change that keeps the engine leaves the composition open: nothing is committed, and what
+    // is shown follows the new settings (the list relabelled with the letter keys).
+    {
+        FakeClient c;
+        press(s, c, {KS, KU, K3, KSpace});
+        CHECK(c.candidatesVisible && c.shownKeys.empty());
+        const std::string shown = c.preedit;
+        Config homeRow;
+        homeRow.selectionKeys = 1;
+        s.setConfig(homeRow);
+        CHECK(c.commits.empty() && c.preedit == shown);
+        CHECK(c.candidatesVisible && c.shownKeys == "asdfghjkl;");
+        Config quiet = homeRow;
+        quiet.rerank = false;
+        s.setConfig(quiet);
+        CHECK(c.commits.empty() && c.preedit == shown && c.candidatesVisible && c.shownKeys == "asdfghjkl;");
+        // Prediction and the style recompute the composition (the core closes the window); still nothing
+        // is sent.
+        Config formal = quiet;
+        formal.prediction = false;
+        formal.profile = 1;
+        s.setConfig(formal);
+        CHECK(c.commits.empty() && !c.preedit.empty() && !c.candidatesVisible);
+        const std::string recomputed = c.preedit;
+        s.finish(c, true);
+        CHECK(c.commits.size() == 1 && c.commits[0] == recomputed);
+        s.setConfig(Config{});
+        CHECK(c.commits.size() == 1); // nothing open: nothing to send
+    }
+
     // The ETen layout after a settings change; an open composition is committed first.
     {
         FakeClient c;
