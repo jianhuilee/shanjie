@@ -1,7 +1,9 @@
 #pragma once
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "shanjie.h"
@@ -51,6 +53,30 @@ struct Paths {
     std::string lexicon, packs, lm, learn;
 };
 
+// An engine built on another thread (docs/spec/c-abi.md §5.2): only that thread touches it until it is
+// handed to the session's thread. Frees the engine unless it was adopted. Move-only.
+struct BuiltEngine {
+    ShanjieEngine *engine = nullptr;
+    bool hasModel = false;  // the n-gram model is loaded
+    bool allLoaded = false; // the model, the small model and the colloquial table: its parts can be shared
+    // Non-zero return codes of the build, logged on the session's thread. A static description and a
+    // code each, as every log line (R2).
+    std::vector<std::pair<const char *, int32_t>> notes;
+
+    BuiltEngine() = default;
+    BuiltEngine(BuiltEngine &&other) noexcept;
+    BuiltEngine &operator=(BuiltEngine &&other) noexcept;
+    BuiltEngine(const BuiltEngine &) = delete;
+    BuiltEngine &operator=(const BuiltEngine &) = delete;
+    ~BuiltEngine();
+};
+
+// Frees a ShanjieShared (the model parts one engine lends to the build of another, c-abi.md §5.4).
+struct SharedFree {
+    void operator()(ShanjieShared *shared) const { shanjie_shared_free(shared); }
+};
+using SharedParts = std::unique_ptr<ShanjieShared, SharedFree>;
+
 class CoreEngine {
 public:
     // Receives a static description and a return code. Never receives input text or paths.
@@ -64,6 +90,16 @@ public:
     // Frees any engine, creates one, loads the models and sends every setting. False when no engine
     // could be created.
     bool build(const Paths &paths, const Config &config);
+
+    // Builds an engine on any thread: from the files (`shared` null) or from the loaded model parts of
+    // another engine, with the same fall-back when a pack is the problem. Touches no CoreEngine.
+    static BuiltEngine construct(const Paths &paths, uint32_t layout, uint32_t packs, const ShanjieShared *shared);
+    // Makes `built` the engine (on the session's thread): logs its codes, sends every setting, opens the
+    // learning file. Returns the previous engine, for the caller to free where it likes.
+    BuiltEngine adopt(BuiltEngine built, const Config &config, const Paths &paths);
+    // The model parts of this engine for another one's build, or null: only when the model, the small
+    // model and the colloquial table all loaded (otherwise a build from the files may do better).
+    SharedParts share();
     bool ready() const { return engine_ != nullptr; }
     bool hasModel() const { return hasModel_; }
 
@@ -91,13 +127,13 @@ public:
     Result applyJob(ShanjieRerankJob *job);  // code 5: nothing changed. Does not free the job.
 
 private:
-    ShanjieEngine *create(const Paths &paths, uint32_t layout, uint32_t packs);
     void note(const char *what, int32_t code) const;
     Result send(const Config &config, const Config *from);
 
     Log log_;
     ShanjieEngine *engine_ = nullptr;
     bool hasModel_ = false;
+    bool allLoaded_ = false;
 };
 
 } // namespace shanjie

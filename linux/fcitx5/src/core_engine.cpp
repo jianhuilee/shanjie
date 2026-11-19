@@ -45,54 +45,104 @@ void CoreEngine::note(const char *what, int32_t code) const {
     if (code != 0 && log_) log_(what, code);
 }
 
-ShanjieEngine *CoreEngine::create(const Paths &paths, uint32_t layout, uint32_t packs) {
+BuiltEngine::BuiltEngine(BuiltEngine &&other) noexcept
+    : engine(std::exchange(other.engine, nullptr)), hasModel(other.hasModel), allLoaded(other.allLoaded),
+      notes(std::move(other.notes)) {}
+
+BuiltEngine &BuiltEngine::operator=(BuiltEngine &&other) noexcept {
+    if (this != &other) {
+        shanjie_engine_free(engine);
+        engine = std::exchange(other.engine, nullptr);
+        hasModel = other.hasModel;
+        allLoaded = other.allLoaded;
+        notes = std::move(other.notes);
+    }
+    return *this;
+}
+
+BuiltEngine::~BuiltEngine() { shanjie_engine_free(engine); }
+
+BuiltEngine CoreEngine::construct(const Paths &paths, uint32_t layout, uint32_t packs, const ShanjieShared *shared) {
+    BuiltEngine built;
+    auto note = [&](const char *what, int32_t code) {
+        if (code != 0) built.notes.emplace_back(what, code);
+    };
     auto make = [&](uint32_t mask) -> ShanjieEngine * {
         ShanjieEngine *e = nullptr;
-        const int32_t code =
-            shanjie_engine_new_packs(paths.lexicon.c_str(), layout, paths.packs.c_str(), mask, &e);
-        note("shanjie_engine_new_packs", code);
-        return code == 0 ? e : nullptr;
+        if (shared) {
+            note("shanjie_engine_new_shared", shanjie_engine_new_shared(shared, layout, paths.packs.c_str(), mask, &e));
+        } else {
+            note("shanjie_engine_new_packs",
+                 shanjie_engine_new_packs(paths.lexicon.c_str(), layout, paths.packs.c_str(), mask, &e));
+        }
+        return e;
     };
-    if (ShanjieEngine *e = make(packs)) return e;
-    if (packs == 0) return nullptr;
-    // A pack may be the problem (docs/spec/macos-shell.md §2.1): try without packs, then drop one
-    // enabled pack at a time and keep the first set that builds.
-    ShanjieEngine *bare = make(0);
-    if (!bare) return nullptr;
-    if (std::popcount(packs) == 1) return bare;
-    for (uint32_t bit = 1; bit <= SHANJIE_PACK_BEAUTY; bit <<= 1) {
-        if (!(packs & bit)) continue;
-        shanjie_engine_free(bare);
-        bare = nullptr;
-        if (ShanjieEngine *e = make(packs & ~bit)) return e;
+    // A pack may be the problem (docs/spec/macos-shell.md §2.1): try without packs, then drop one enabled
+    // pack at a time and keep the first set that builds. The shared path tries the same way with the
+    // same parts.
+    ShanjieEngine *e = make(packs);
+    if (!e && packs != 0) {
+        ShanjieEngine *bare = make(0);
+        if (bare && std::popcount(packs) == 1) {
+            e = bare;
+        } else if (bare) {
+            shanjie_engine_free(bare);
+            for (uint32_t bit = 1; bit <= SHANJIE_PACK_BEAUTY && !e; bit <<= 1)
+                if (packs & bit) e = make(packs & ~bit);
+            if (!e) e = make(0);
+        }
     }
-    return make(0);
+    if (!e) return built;
+    built.engine = e;
+    if (shared) {
+        // new_shared is all or nothing: an engine it returns has every part the handle had, and a handle
+        // is only taken from an engine that loaded all three (share()).
+        built.hasModel = built.allLoaded = true;
+        return built;
+    }
+    if (paths.lm.empty()) return built;
+    int32_t code = shanjie_engine_load_lm(e, (paths.lm + "/bigram.sjlm").c_str());
+    note("shanjie_engine_load_lm", code);
+    if (code != 0) return built;
+    built.hasModel = true;
+    code = shanjie_engine_load_tinylm(e, (paths.lm + "/tinylm.sjtl").c_str());
+    note("shanjie_engine_load_tinylm", code);
+    if (code != 0) return built;
+    code = shanjie_engine_load_colloquial(e, (paths.lm + "/colloquial.sjlm").c_str());
+    note("shanjie_engine_load_colloquial", code);
+    built.allLoaded = code == 0;
+    return built;
 }
 
 bool CoreEngine::build(const Paths &paths, const Config &config) {
-    shanjie_engine_free(engine_);
-    engine_ = nullptr;
-    hasModel_ = false;
-    engine_ = create(paths, config.layout, config.packs);
-    if (!engine_) return false;
+    // The old engine goes first, so that two never hold their models at once on this path.
+    adopt(BuiltEngine(), config, paths);
+    adopt(construct(paths, config.layout, config.packs, nullptr), config, paths);
+    return engine_ != nullptr;
+}
 
-    if (!paths.lm.empty()) {
-        int32_t code = shanjie_engine_load_lm(engine_, (paths.lm + "/bigram.sjlm").c_str());
-        note("shanjie_engine_load_lm", code);
-        if (code == 0) {
-            hasModel_ = true;
-            code = shanjie_engine_load_tinylm(engine_, (paths.lm + "/tinylm.sjtl").c_str());
-            note("shanjie_engine_load_tinylm", code);
-            if (code == 0) {
-                note("shanjie_engine_load_colloquial",
-                     shanjie_engine_load_colloquial(engine_, (paths.lm + "/colloquial.sjlm").c_str()));
-            }
-        }
+BuiltEngine CoreEngine::adopt(BuiltEngine built, const Config &config, const Paths &paths) {
+    for (const auto &[what, code] : built.notes) note(what, code);
+    BuiltEngine old;
+    old.engine = std::exchange(engine_, std::exchange(built.engine, nullptr));
+    old.hasModel = hasModel_;
+    old.allLoaded = allLoaded_;
+    hasModel_ = built.hasModel;
+    allLoaded_ = built.allLoaded;
+    if (engine_) {
+        applySettings(config);
+        if (!paths.learn.empty())
+            note("shanjie_engine_learning_open", shanjie_engine_learning_open(engine_, paths.learn.c_str()));
     }
-    applySettings(config);
-    if (!paths.learn.empty())
-        note("shanjie_engine_learning_open", shanjie_engine_learning_open(engine_, paths.learn.c_str()));
-    return true;
+    return old;
+}
+
+SharedParts CoreEngine::share() {
+    if (!engine_ || !allLoaded_) return nullptr;
+    ShanjieShared *shared = nullptr;
+    const int32_t code = shanjie_engine_share(engine_, &shared);
+    note("shanjie_engine_share", code);
+    return SharedParts(code == 0 ? shared : nullptr);
 }
 
 bool CoreEngine::needsRebuild(const Config &a, const Config &b) {

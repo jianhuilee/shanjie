@@ -57,5 +57,7 @@ otherwise they type Zhuyin. A page holds nine items, so `;` is spare.
   takes about 30 ms for a short sentence (well inside Enter's 100 ms wait for it); other CPUs, such as
   64-bit ARM, run the scalar kernel and are slower, so there an Enter pressed right after the last key
   may send the uncorrected text.
-- Changing the keyboard layout or a word pack blocks fcitx5 for about a second while the engine rebuilds.
+- Changing the keyboard layout blocks fcitx5 for about 1.5 seconds while the engine rebuilds, and commits
+  an open composition first (as on macOS: the layout changes what the next key means, so it cannot wait).
+  A word pack is built in the background and comes in after the current composition ends.
 - No single-Shift English toggle, no automatic chat/formal choice per application.

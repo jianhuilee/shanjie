@@ -33,6 +33,7 @@ add_library(shanjie_shell STATIC
     src/keymap.cpp
     src/core_engine.cpp
     src/rerank_runner.cpp
+    src/task_thread.cpp
     src/session.cpp)
 target_include_directories(shanjie_shell PUBLIC src)
 target_link_libraries(shanjie_shell PUBLIC shanjie_core)
@@ -125,6 +126,7 @@ shanjie_test(test_core_engine shanjie_shell)
 shanjie_test(test_rerank_runner shanjie_shell)
 shanjie_test(test_session shanjie_shell)
 shanjie_test(test_fcitx_key shanjie_shell Fcitx5::Utils)
+shanjie_test(test_pack_switch shanjie_shell)
 shanjie_test(test_fcitx_policy shanjie_shell Fcitx5::Core)
 
 # The install manifest: installs into a scratch DESTDIR and checks the data and its licenses are there.

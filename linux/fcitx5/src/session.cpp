@@ -1,19 +1,28 @@
 #include "session.h"
 
 #include <chrono>
+#ifdef __GLIBC__
+#include <malloc.h>
+#endif
 
 #include "utf.h"
 
 namespace shanjie {
 
-Session::Session(Paths paths, Config config, RerankRunner::Post post, CoreEngine::Log log)
-    : paths_(std::move(paths)), config_(config), log_(std::move(log)), engine_(log_) {
+Session::Session(Paths paths, Config config, RerankRunner::Post post, CoreEngine::Log log, Spawn spawn)
+    : paths_(std::move(paths)), config_(config), post_(post), log_(std::move(log)), engine_(log_),
+      spawn_(std::move(spawn)) {
     engine_.build(paths_, config_);
+    requested_ = wanted();
     runner_ = std::make_unique<RerankRunner>(std::move(post),
                                              [this](ShanjieRerankJob *job) { onRerankDone(job); });
+    if (!spawn_) {
+        thread_ = std::make_unique<TaskThread>();
+        spawn_ = [t = thread_.get()](std::function<void()> task) { t->run(std::move(task)); };
+    }
 }
 
-Session::~Session() = default;
+Session::~Session() { *alive_ = false; }
 
 void Session::claim(Client &client) {
     if (owner_ == &client) return;
@@ -131,6 +140,85 @@ void Session::preeditMoved(Client &client) {
     client.setPreedit(text, cursor, englishStart, englishEnd);
 }
 
+void Session::reconcile() {
+    if (buildInFlight_) return;
+    const Wanted want = wanted();
+    if (want == requested_) return;
+    buildInFlight_ = true;
+    engineBuilds_++;
+    // The shared parts are taken here, on the engine's thread; the task owns them from now on and frees
+    // them when its last new_shared has returned. The task touches nothing of the session.
+    auto shared = std::make_shared<SharedParts>(engine_.share());
+    spawn_([paths = paths_, want, shared, post = post_, alive = alive_, this]() {
+        auto built = std::make_shared<BuiltEngine>(CoreEngine::construct(paths, want.layout, want.packs, shared->get()));
+        shared->reset();
+        post([alive, this, want, built]() {
+            if (*alive) buildDone(want, std::move(*built));
+        });
+    });
+}
+
+void Session::buildDone(Wanted forWhat, BuiltEngine built) {
+    buildInFlight_ = false;
+    if (forWhat != wanted()) {
+        // Stale: asked for something no longer wanted. Freed in the background; the latest wish is built.
+        dispose(std::move(built));
+        reconcile();
+        return;
+    }
+    if (!built.engine) {
+        // Nothing could be built: the current engine stays, and nothing retries until the next switch.
+        for (const auto &[what, code] : built.notes)
+            if (log_) log_(what, code);
+        return;
+    }
+    ready_ = std::make_unique<BuiltEngine>(std::move(built));
+    readyFor_ = forWhat;
+    installIfReady();
+}
+
+// The swap, only between compositions: nothing the person is typing is sent or lost for it. A prediction
+// row that is only showing goes away with the old engine.
+void Session::installIfReady() {
+    if (!ready_ || composing_ || lastSelected_ >= 0) return;
+    runner_->cancelAll(); // jobs of the old engine must not reach the new one
+    if (owner_ && lastCount_ > 0) owner_->hideCandidates();
+    std::unique_ptr<BuiltEngine> built = std::move(ready_);
+    dispose(engine_.adopt(std::move(*built), config_, paths_));
+    requested_ = readyFor_;
+    lastVertical_ = 0;
+    lastSelected_ = -1;
+    lastCount_ = 0;
+    lastShown_ = Output();
+}
+
+// Posted, so that the swap never runs inside the key or call that ended the composition.
+void Session::scheduleInstall() {
+    if (!ready_ || composing_ || lastSelected_ >= 0) return;
+    post_([alive = alive_, this]() {
+        if (*alive) installIfReady();
+    });
+}
+
+void Session::discardReady() {
+    if (ready_) dispose(std::move(*ready_));
+    ready_.reset();
+}
+
+// Engines nobody uses are freed on the background thread, not on the key path. glibc keeps what an engine
+// freed (most of it sits in the arena of the thread that built it), which would leave fcitx5 about 200 MiB
+// larger after a few switches; malloc_trim gives it back.
+void Session::dispose(BuiltEngine built) {
+    if (!built.engine) return;
+    auto owned = std::make_shared<BuiltEngine>(std::move(built));
+    spawn_([owned]() mutable {
+        owned.reset();
+#ifdef __GLIBC__
+        malloc_trim(0);
+#endif
+    });
+}
+
 void Session::clientDestroyed(Client &client) {
     if (owner_ != &client) return;
     owner_ = nullptr;
@@ -141,21 +229,37 @@ void Session::clientDestroyed(Client &client) {
     lastSelected_ = -1;
     lastCount_ = 0;
     lastPreedit_.reset();
+    scheduleInstall();
 }
 
 void Session::setConfig(const Config &config) {
-    const bool rebuild = CoreEngine::needsRebuild(config_, config) || !engine_.ready();
-    if (rebuild) {
+    // A layout changes what the next physical key means, so it cannot wait in the background: the
+    // engine is rebuilt here and now (the macOS shell does the same). Also the way back from no engine.
+    if (config.layout != config_.layout || !engine_.ready()) {
         // A new engine cannot take over the composition: it goes to its owner first.
         if (owner_) finish(*owner_, true);
         config_ = config;
         runner_->cancelAll(); // jobs of the old engine must not reach the new one
+        discardReady();
         engine_.build(paths_, config_);
+        requested_ = wanted(); // a pack build still running is now stale
         composing_ = false;
         lastVertical_ = 0;
         lastSelected_ = -1;
         lastCount_ = 0;
         lastPreedit_.reset();
+        lastShown_ = Output();
+        return;
+    }
+    // A word-pack change: the other settings go to the live engine as below, the new engine is built in
+    // the background. A finished build for other packs is dropped.
+    if (config.packs != config_.packs) {
+        Config rest = config;
+        rest.packs = config_.packs;
+        setConfig(rest);
+        config_.packs = config.packs;
+        discardReady();
+        reconcile();
         return;
     }
     // The same engine: every setter recomputes the open composition, which stays open and is shown
@@ -217,6 +321,7 @@ void Session::apply(Client &client, const Output &out) {
         return;
     }
     if (job) runner_->submit(job);
+    scheduleInstall(); // a composition that just ended lets a waiting engine in
 }
 
 void Session::fail(Client &client, const char *what, int32_t code) {
@@ -230,6 +335,7 @@ void Session::fail(Client &client, const char *what, int32_t code) {
     lastSelected_ = -1;
     lastCount_ = 0;
     runner_->cancelAll();
+    scheduleInstall();
 }
 
 void Session::onRerankDone(ShanjieRerankJob *job) {

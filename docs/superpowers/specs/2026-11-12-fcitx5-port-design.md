@@ -138,8 +138,9 @@ the same call; no output pointer escapes.
 
 ### 4.4 `settings`
 
-An fcitx5 `Configuration` (§6). Changing layout or packs rebuilds the engine after committing the open
-composition; every other option is sent to the live engine without ending the composition (§6).
+An fcitx5 `Configuration` (§6). Changing the layout rebuilds the engine after committing the open
+composition; a word-pack change builds the new engine in the background (§4.8); every other option is
+sent to the live engine without ending the composition (§6).
 
 ### 4.5 `candidates`
 
@@ -234,6 +235,39 @@ main thread.
   (`InputContext::updatePreedit` sends nothing to the application once the Preedit flag is gone); on the
   capability-changed event it puts the same preedit into the new place. `fcitx_policy.h`
   (`preeditMoves`) decides from the event whether the Preedit flag changed.
+
+### 4.8 Word-pack switches
+
+As the macOS shell does (`docs/spec/macos-shell.md` §2.1): a pack change returns at once, the current
+engine keeps typing, and the new engine is built on a background thread (`TaskThread`) and swapped in
+between compositions.
+
+- **Build**: when the current engine loaded the model, the small model and the colloquial table, its
+  parts are taken on the main thread (`shanjie_engine_share`, microseconds) and the background builds with
+  `shanjie_engine_new_shared`; otherwise it builds from the files. The pack fall-back is the same as the
+  synchronous build's, with the same parts for every attempt (`CoreEngine::construct`). The return codes
+  travel with the result and are logged on the main thread.
+- **Swap**: only when no composition, candidate window or entered prediction row is open; a prediction
+  row that is only showing is hidden. Posted to the main loop when a composition ends, never run inside
+  the key that ended it. The swap cancels the rerank jobs, sends every setting, opens the learning file.
+- **Staleness**: a result is compared with what is wanted now (packs and layout) by what it was asked
+  for. One build at a time; a switch during a build only records the wish. A stale result is dropped
+  and the latest wish built; going back to the current packs builds nothing. A layout change rebuilds at
+  once and makes a build in flight stale. A failed build keeps the current engine.
+- **Freeing**: engines nobody uses (the old one, stale results) are freed on the background thread,
+  followed by `malloc_trim`: glibc otherwise keeps most of what an engine freed in the arena of the
+  thread that built it, about 200 MiB after a few switches.
+- **Lifetime**: posted callbacks check a flag the session clears in its destructor; the background
+  thread is joined before the session's other members go, and every engine and shared handle is owned
+  by a RAII object, so whichever side drops it frees it once.
+- **Measured** (development machine, all packs, no learning file): `setConfig` 0.004 ms; the swap on the
+  main thread 0.03 ms; the build itself about 0.9 s (1.46 s from the files); keys typed during a build
+  stay within 2% of their usual time (upstream's `pack_switch_bench`). Peak memory rises from 439 to
+  about 590 MiB during a build and returns to about 420 MiB after it.
+- **Tests**: `test_pack_switch` holds the background tasks and runs them by hand (idle switch, a switch
+  during a composition, rapid switches, a switch back, a layout change during a build, the session going
+  away with a build pending) and once with the real thread. Each of these mutations fails it: swapping
+  during a composition, no staleness check, a synchronous pack rebuild, no swap after a composition ends.
 
 ## 5. Applying an output
 
@@ -337,4 +371,4 @@ has ten keys and a page nine items, so `;` never has an item and is eaten.
 - Super+Backspace for forgetting may be taken by the compositor.
 - Without surrounding-text support in the application there is no left context, so the first word of a
   composition is decoded as a sentence start.
-- Changing layout or packs blocks the fcitx5 main loop for about a second while the engine rebuilds.
+- Changing the layout blocks the fcitx5 main loop for about 1.5 seconds while the engine rebuilds.

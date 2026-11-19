@@ -9,6 +9,7 @@
 #include "core_engine.h"
 #include "keymap.h"
 #include "rerank_runner.h"
+#include "task_thread.h"
 
 namespace shanjie {
 
@@ -35,7 +36,11 @@ public:
     // How long Enter waits for a running rerank (docs/spec/semantic-rerank.md, ENTER_RERANK_WAIT_MS).
     static constexpr int kEnterRerankWaitMs = 100;
 
-    Session(Paths paths, Config config, RerankRunner::Post post, CoreEngine::Log log);
+    // Runs a task on the background thread of the word-pack builds. Empty: the session's own TaskThread;
+    // tests hold the tasks and run them by hand.
+    using Spawn = std::function<void(std::function<void()>)>;
+
+    Session(Paths paths, Config config, RerankRunner::Post post, CoreEngine::Log log, Spawn spawn = {});
     ~Session();
 
     bool ready() const { return engine_.ready(); }
@@ -59,8 +64,13 @@ public:
     void preeditMoved(Client &client);
     // `client` is going away; drops a composition it owns.
     void clientDestroyed(Client &client);
-    // Commits an open composition, then rebuilds the engine or resends the settings.
+    // A layout change commits an open composition and rebuilds the engine here and now. A word-pack
+    // change builds the new engine in the background and swaps it in when no composition is open; the
+    // current engine keeps typing meanwhile. Every other change goes to the live engine and leaves the
+    // composition open.
     void setConfig(const Config &config);
+    // Background builds started so far (tests).
+    int engineBuilds() const { return engineBuilds_; }
     // How long Enter waits for the rerank; tests lengthen it.
     void setEnterRerankWaitMs(int ms) { enterRerankWaitMs_ = ms; }
 
@@ -70,8 +80,22 @@ private:
     void fail(Client &client, const char *what, int32_t code);
     void onRerankDone(ShanjieRerankJob *job);
 
+    // What an engine was built for: a result is current only if this still matches what is wanted.
+    struct Wanted {
+        uint32_t layout = 0, packs = 0;
+        bool operator==(const Wanted &) const = default;
+    };
+    Wanted wanted() const { return {config_.layout, config_.packs}; }
+    void reconcile();
+    void buildDone(Wanted forWhat, BuiltEngine built);
+    void installIfReady();
+    void scheduleInstall();
+    void discardReady();
+    void dispose(BuiltEngine built);
+
     Paths paths_;
     Config config_;
+    RerankRunner::Post post_;
     CoreEngine::Log log_;
     CoreEngine engine_;
     std::unique_ptr<RerankRunner> runner_; // after engine_: destroyed first, so the worker is joined
@@ -85,6 +109,19 @@ private:
     std::optional<std::tuple<std::string, size_t, size_t, size_t>> lastPreedit_;
     // The list last shown to the owner (empty when none), to relabel it when the selection keys change.
     Output lastShown_;
+
+    // Word-pack switches (design §4.7). At most one build runs; a finished one waits in ready_ until no
+    // composition is open. Every result is compared with what is wanted now, by what it was asked for.
+    Wanted requested_;                    // what the current engine was built for
+    bool buildInFlight_ = false;
+    std::unique_ptr<BuiltEngine> ready_;  // built, current, not yet swapped in
+    Wanted readyFor_;
+    int engineBuilds_ = 0;
+    // Callbacks posted to the main loop check this before touching the session.
+    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
+    // The two below are destroyed before every member above, so no task runs once those go.
+    std::unique_ptr<TaskThread> thread_;
+    Spawn spawn_;
 };
 
 } // namespace shanjie
