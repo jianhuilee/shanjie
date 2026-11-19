@@ -245,23 +245,34 @@ between compositions.
 - **Build**: when the current engine loaded the model, the small model and the colloquial table, its
   parts are taken on the main thread (`shanjie_engine_share`, microseconds) and the background builds with
   `shanjie_engine_new_shared`; otherwise it builds from the files. The pack fall-back is the same as the
-  synchronous build's, with the same parts for every attempt (`CoreEngine::construct`). The return codes
-  travel with the result and are logged on the main thread.
+  synchronous build's, with the same parts for every attempt (`CoreEngine::construct`). The build also
+  opens the learning file (parsing it is the slow part, 12–41 ms for 50,000 records), after noting the
+  file's stamp (device, inode, size, modification time). The return codes travel with the result and
+  are logged on the main thread.
+- **Synchronous rebuilds** (a layout change) reuse the loaded model parts the same way when the
+  directories are the same, falling back to the files if the shared build fails. Without it a layout
+  change during a pack build loaded the models a second time (peak 888 MiB); with it the peak is about
+  600 MiB and the rebuild takes 0.9 s instead of 1.46 s.
 - **Swap**: only when no composition, candidate window or entered prediction row is open; a prediction
   row that is only showing is hidden. Posted to the main loop when a composition ends, never run inside
-  the key that ended it. The swap cancels the rerank jobs, sends every setting, opens the learning file.
+  the key that ended it. The swap cancels the rerank jobs and sends every setting. It opens the learning
+  file again only if the file's stamp changed since the build opened it: a choice committed during the
+  build was appended to it, and the new engine must know it.
 - **Staleness**: a result is compared with what is wanted now (packs and layout) by what it was asked
   for. One build at a time; a switch during a build only records the wish. A stale result is dropped
-  and the latest wish built; going back to the current packs builds nothing. A layout change rebuilds at
+  and the latest wish built; going back to the current packs builds nothing. A result is also dropped
+  when the current engine already matches what is wanted (a layout change away and back rebuilt it while
+  the result was on its way). A layout change rebuilds at
   once and makes a build in flight stale. A failed build keeps the current engine.
-- **Freeing**: engines nobody uses (the old one, stale results) are freed on the background thread,
+- **Freeing**: engines nobody uses (the old one, stale results) are freed on the background thread (the
+  task holds the only reference, so it is freed there even if the task runs before `spawn` returns),
   followed by `malloc_trim`: glibc otherwise keeps most of what an engine freed in the arena of the
   thread that built it, about 200 MiB after a few switches.
 - **Lifetime**: posted callbacks check a flag the session clears in its destructor; the background
   thread is joined before the session's other members go, and every engine and shared handle is owned
   by a RAII object, so whichever side drops it frees it once.
-- **Measured** (development machine, all packs, no learning file): `setConfig` 0.004 ms; the swap on the
-  main thread 0.03 ms; the build itself about 0.9 s (1.46 s from the files); keys typed during a build
+- **Measured** (development machine, all packs): `setConfig` 0.004 ms; the swap on the main thread 0.03 ms,
+  also with a 50,000-record learning file, and 11.8 ms when that file changed during the build; the build itself about 0.9 s (1.46 s from the files); keys typed during a build
   stay within 2% of their usual time (upstream's `pack_switch_bench`). Peak memory rises from 439 to
   about 590 MiB during a build and returns to about 420 MiB after it.
 - **Tests**: `test_pack_switch` holds the background tasks and runs them by hand (idle switch, a switch
@@ -371,4 +382,4 @@ has ten keys and a page nine items, so `;` never has an item and is eaten.
 - Super+Backspace for forgetting may be taken by the compositor.
 - Without surrounding-text support in the application there is no left context, so the first word of a
   composition is decoded as a sentence start.
-- Changing the layout blocks the fcitx5 main loop for about 1.5 seconds while the engine rebuilds.
+- Changing the layout blocks the fcitx5 main loop for about 0.9 seconds while the engine rebuilds.

@@ -69,8 +69,11 @@ public:
     // current engine keeps typing meanwhile. Every other change goes to the live engine and leaves the
     // composition open.
     void setConfig(const Config &config);
-    // Background builds started so far (tests).
+    // Background builds started, engines swapped in, and swaps that had to open the learning file again
+    // (tests).
     int engineBuilds() const { return engineBuilds_; }
+    int engineSwaps() const { return engineSwaps_; }
+    int learningReopens() const { return engine_.learningReopens(); }
     // How long Enter waits for the rerank; tests lengthen it.
     void setEnterRerankWaitMs(int ms) { enterRerankWaitMs_ = ms; }
 
@@ -117,6 +120,7 @@ private:
     std::unique_ptr<BuiltEngine> ready_;  // built, current, not yet swapped in
     Wanted readyFor_;
     int engineBuilds_ = 0;
+    int engineSwaps_ = 0;
     // Callbacks posted to the main loop check this before touching the session.
     std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
     // The two below are destroyed before every member above, so no task runs once those go.

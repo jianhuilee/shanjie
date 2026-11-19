@@ -53,12 +53,26 @@ struct Paths {
     std::string lexicon, packs, lm, learn;
 };
 
+// What a file looked like (absent, or its device, inode, size and modification time): the learning file
+// changes on every append and on every rewrite (a rename), so an equal stamp means equal contents.
+struct FileStamp {
+    bool exists = false;
+    uint64_t dev = 0, ino = 0, size = 0;
+    int64_t mtimeNs = 0;
+    bool operator==(const FileStamp &) const = default;
+    static FileStamp of(const std::string &path);
+};
+
 // An engine built on another thread (docs/spec/c-abi.md §5.2): only that thread touches it until it is
 // handed to the session's thread. Frees the engine unless it was adopted. Move-only.
 struct BuiltEngine {
     ShanjieEngine *engine = nullptr;
     bool hasModel = false;  // the n-gram model is loaded
     bool allLoaded = false; // the model, the small model and the colloquial table: its parts can be shared
+    // The learning file was opened on the building thread, and how it looked just before: if it still
+    // looks the same at the hand-over, the engine already holds what it holds.
+    bool learningOpened = false;
+    FileStamp learningStamp;
     // Non-zero return codes of the build, logged on the session's thread. A static description and a
     // code each, as every log line (R2).
     std::vector<std::pair<const char *, int32_t>> notes;
@@ -92,14 +106,18 @@ public:
     bool build(const Paths &paths, const Config &config);
 
     // Builds an engine on any thread: from the files (`shared` null) or from the loaded model parts of
-    // another engine, with the same fall-back when a pack is the problem. Touches no CoreEngine.
+    // another engine, with the same fall-back when a pack is the problem, and opens the learning file
+    // (parsing it is the slow part of a hand-over). Touches no CoreEngine.
     static BuiltEngine construct(const Paths &paths, uint32_t layout, uint32_t packs, const ShanjieShared *shared);
-    // Makes `built` the engine (on the session's thread): logs its codes, sends every setting, opens the
-    // learning file. Returns the previous engine, for the caller to free where it likes.
+    // Makes `built` the engine (on the session's thread): logs its codes, sends every setting, and opens
+    // the learning file again only if it changed since the build opened it (choices committed meanwhile
+    // were appended to it). Returns the previous engine, for the caller to free where it likes.
     BuiltEngine adopt(BuiltEngine built, const Config &config, const Paths &paths);
     // The model parts of this engine for another one's build, or null: only when the model, the small
     // model and the colloquial table all loaded (otherwise a build from the files may do better).
     SharedParts share();
+    // Hand-overs that had to open the learning file again (tests).
+    int learningReopens() const { return learningReopens_; }
     bool ready() const { return engine_ != nullptr; }
     bool hasModel() const { return hasModel_; }
 
@@ -128,12 +146,15 @@ public:
 
 private:
     void note(const char *what, int32_t code) const;
+    static BuiltEngine constructEngine(const Paths &paths, uint32_t layout, uint32_t packs, const ShanjieShared *shared);
     Result send(const Config &config, const Config *from);
 
     Log log_;
     ShanjieEngine *engine_ = nullptr;
     bool hasModel_ = false;
     bool allLoaded_ = false;
+    int learningReopens_ = 0;
+    Paths builtFrom_; // the directories the current engine was built from
 };
 
 } // namespace shanjie

@@ -160,8 +160,9 @@ void Session::reconcile() {
 
 void Session::buildDone(Wanted forWhat, BuiltEngine built) {
     buildInFlight_ = false;
-    if (forWhat != wanted()) {
-        // Stale: asked for something no longer wanted. Freed in the background; the latest wish is built.
+    if (forWhat != wanted() || requested_ == wanted()) {
+        // Stale: asked for something no longer wanted, or the current engine is already that (a layout
+        // change away and back rebuilt it meanwhile). Freed in the background; the latest wish is built.
         dispose(std::move(built));
         reconcile();
         return;
@@ -186,6 +187,7 @@ void Session::installIfReady() {
     std::unique_ptr<BuiltEngine> built = std::move(ready_);
     dispose(engine_.adopt(std::move(*built), config_, paths_));
     requested_ = readyFor_;
+    engineSwaps_++;
     lastVertical_ = 0;
     lastSelected_ = -1;
     lastCount_ = 0;
@@ -210,8 +212,10 @@ void Session::discardReady() {
 // larger after a few switches; malloc_trim gives it back.
 void Session::dispose(BuiltEngine built) {
     if (!built.engine) return;
+    // The task holds the only reference: if it runs before spawn_ returns, the engine is still freed
+    // there, not here.
     auto owned = std::make_shared<BuiltEngine>(std::move(built));
-    spawn_([owned]() mutable {
+    spawn_([owned = std::move(owned)]() mutable {
         owned.reset();
 #ifdef __GLIBC__
         malloc_trim(0);

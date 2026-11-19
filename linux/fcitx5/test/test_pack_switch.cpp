@@ -2,6 +2,8 @@
 // (design §4.7, as docs/spec/macos-shell.md §2.1). The background tasks are held here and run by hand, so
 // every ordering is under the test's control; results come back through a hand-pumped queue.
 #include <chrono>
+#include <filesystem>
+#include <unistd.h>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -20,13 +22,18 @@ struct FakeClient : Client {
     std::vector<std::string> commits;
     std::string preedit;
     bool candidatesVisible = false;
+    Output shown;
     void commit(const std::string &text) override { commits.push_back(text); }
     void setPreedit(const std::string &text, size_t, size_t, size_t) override { preedit = text; }
     void clearPreedit() override { preedit.clear(); }
-    void showCandidates(const Output &, const std::string &) override { candidatesVisible = true; }
+    void showCandidates(const Output &out, const std::string &) override {
+        shown = out;
+        candidatesVisible = true;
+    }
     void hideCandidates() override { candidatesVisible = false; }
     bool isPassword() const override { return false; }
-    std::optional<std::string> leftContext() const override { return std::nullopt; }
+    std::optional<std::string> left;
+    std::optional<std::string> leftContext() const override { return left; }
 };
 
 struct Pump {
@@ -187,6 +194,65 @@ int main() {
         pump.run();
         CHECK(s.engineBuilds() == 1); // the stale result was not followed by another build
         CHECK(s.ready());
+    }
+
+    // A layout change away and back while a pack result is on its way: the second change already built
+    // the engine for these packs, so the result is dropped, not swapped in.
+    {
+        Held held;
+        Session s(paths, withPack, post, {}, [&](std::function<void()> t) { held.tasks.push_back(std::move(t)); });
+        FakeClient c;
+        s.setConfig(withoutPack);
+        held.runAll(); // the result is posted, not yet delivered
+        Config eten = withoutPack;
+        eten.layout = 1;
+        s.setConfig(eten);
+        s.setConfig(withoutPack);
+        pump.run();
+        CHECK(s.engineSwaps() == 0 && s.engineBuilds() == 1);
+        CHECK(typed(s, c) == kWithoutPack);
+        held.runAll();
+    }
+
+    // The learning file: the build opens it in the background; the swap opens it again only when a
+    // choice was committed meanwhile, and that choice is then in effect.
+    {
+        namespace fs = std::filesystem;
+        const fs::path dir = fs::temp_directory_path() / ("shanjie-pack-switch-" + std::to_string(::getpid()));
+        fs::remove_all(dir);
+        Paths learning = paths;
+        learning.learn = dir.string();
+        {
+            Held held;
+            Session s(learning, withPack, post, {}, [&](std::function<void()> t) { held.tasks.push_back(std::move(t)); });
+            s.setConfig(withoutPack);
+            held.runAll();
+            pump.run();
+            CHECK(s.engineSwaps() == 1 && s.learningReopens() == 0);
+            held.runAll();
+        }
+        {
+            Held held;
+            Session s(learning, withPack, post, {}, [&](std::function<void()> t) { held.tasks.push_back(std::move(t)); });
+            FakeClient c;
+            c.left = "\xe6\x88\x91"; // 我: the choice is learned under this text before the cursor
+            s.setConfig(withoutPack);
+            held.runAll(); // built, and the learning file opened, before the choice below
+            for (uint32_t k : {31u, 22u, 4u, 57u}) s.handleKey(c, key(k)); // su3, Space: the window
+            CHECK(c.shown.candidates.size() >= 3);
+            const std::string third = c.shown.candidates.size() >= 3 ? c.shown.candidates[2] : "";
+            s.handleKey(c, key(4)); // the third item
+            s.handleKey(c, key(28)); // Enter commits: the choice is learned and written to the file
+            CHECK(c.commits.size() == 1 && c.commits[0] == third);
+            pump.run(); // the result arrives and is swapped in
+            CHECK(s.engineSwaps() == 1 && s.learningReopens() == 1);
+            for (uint32_t k : {31u, 22u, 4u, 57u}) s.handleKey(c, key(k));
+            // The new engine knows the choice: a learned item comes first in the list (learning.md §1.1).
+            CHECK(!c.shown.candidates.empty() && c.shown.candidates[0] == third);
+            s.finish(c, false);
+            held.runAll();
+        }
+        fs::remove_all(dir);
     }
 
     // The session goes away with a build held or its result still queued: nothing is touched afterwards.

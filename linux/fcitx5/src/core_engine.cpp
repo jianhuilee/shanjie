@@ -2,6 +2,8 @@
 
 #include <bit>
 
+#include <sys/stat.h>
+
 namespace shanjie {
 
 namespace {
@@ -45,9 +47,25 @@ void CoreEngine::note(const char *what, int32_t code) const {
     if (code != 0 && log_) log_(what, code);
 }
 
+FileStamp FileStamp::of(const std::string &path) {
+    FileStamp s;
+    struct stat st {};
+    if (::stat(path.c_str(), &st) != 0) return s;
+    s.exists = true;
+    s.dev = st.st_dev;
+    s.ino = st.st_ino;
+    s.size = static_cast<uint64_t>(st.st_size);
+    s.mtimeNs = static_cast<int64_t>(st.st_mtim.tv_sec) * 1000000000 + st.st_mtim.tv_nsec;
+    return s;
+}
+
+namespace {
+std::string learningFile(const Paths &paths) { return paths.learn + "/learning.tsv"; }
+} // namespace
+
 BuiltEngine::BuiltEngine(BuiltEngine &&other) noexcept
     : engine(std::exchange(other.engine, nullptr)), hasModel(other.hasModel), allLoaded(other.allLoaded),
-      notes(std::move(other.notes)) {}
+      learningOpened(other.learningOpened), learningStamp(other.learningStamp), notes(std::move(other.notes)) {}
 
 BuiltEngine &BuiltEngine::operator=(BuiltEngine &&other) noexcept {
     if (this != &other) {
@@ -55,6 +73,8 @@ BuiltEngine &BuiltEngine::operator=(BuiltEngine &&other) noexcept {
         engine = std::exchange(other.engine, nullptr);
         hasModel = other.hasModel;
         allLoaded = other.allLoaded;
+        learningOpened = other.learningOpened;
+        learningStamp = other.learningStamp;
         notes = std::move(other.notes);
     }
     return *this;
@@ -63,6 +83,20 @@ BuiltEngine &BuiltEngine::operator=(BuiltEngine &&other) noexcept {
 BuiltEngine::~BuiltEngine() { shanjie_engine_free(engine); }
 
 BuiltEngine CoreEngine::construct(const Paths &paths, uint32_t layout, uint32_t packs, const ShanjieShared *shared) {
+    BuiltEngine built = constructEngine(paths, layout, packs, shared);
+    if (built.engine && !paths.learn.empty()) {
+        // The stamp is taken first: a change between it and the open shows at the hand-over and only
+        // costs a second open there.
+        built.learningStamp = FileStamp::of(learningFile(paths));
+        const int32_t code = shanjie_engine_learning_open(built.engine, paths.learn.c_str());
+        if (code != 0) built.notes.emplace_back("shanjie_engine_learning_open", code);
+        built.learningOpened = code == 0;
+    }
+    return built;
+}
+
+BuiltEngine CoreEngine::constructEngine(const Paths &paths, uint32_t layout, uint32_t packs,
+                                        const ShanjieShared *shared) {
     BuiltEngine built;
     auto note = [&](const char *what, int32_t code) {
         if (code != 0) built.notes.emplace_back(what, code);
@@ -115,9 +149,22 @@ BuiltEngine CoreEngine::construct(const Paths &paths, uint32_t layout, uint32_t 
 }
 
 bool CoreEngine::build(const Paths &paths, const Config &config) {
-    // The old engine goes first, so that two never hold their models at once on this path.
+    // The loaded model parts are reused when the current engine has them all, so the models are never
+    // read a second time (a pack build still running holds them too). Then the old engine goes, before
+    // the new one is built.
+    // Only for the same directories: the parts carry the data folder and models they came from.
+    const bool same = paths.lexicon == builtFrom_.lexicon && paths.packs == builtFrom_.packs && paths.lm == builtFrom_.lm;
+    SharedParts shared = same ? share() : nullptr;
+    const bool reused = shared != nullptr;
     adopt(BuiltEngine(), config, paths);
-    adopt(construct(paths, config.layout, config.packs, nullptr), config, paths);
+    BuiltEngine built = construct(paths, config.layout, config.packs, shared.get());
+    shared.reset();
+    if (!built.engine && reused) {
+        // The shared path builds all or nothing; the files may still do.
+        for (const auto &[what, code] : built.notes) note(what, code);
+        built = construct(paths, config.layout, config.packs, nullptr);
+    }
+    adopt(std::move(built), config, paths);
     return engine_ != nullptr;
 }
 
@@ -129,10 +176,14 @@ BuiltEngine CoreEngine::adopt(BuiltEngine built, const Config &config, const Pat
     old.allLoaded = allLoaded_;
     hasModel_ = built.hasModel;
     allLoaded_ = built.allLoaded;
+    builtFrom_ = paths;
     if (engine_) {
         applySettings(config);
-        if (!paths.learn.empty())
+        if (!paths.learn.empty() &&
+            (!built.learningOpened || FileStamp::of(learningFile(paths)) != built.learningStamp)) {
             note("shanjie_engine_learning_open", shanjie_engine_learning_open(engine_, paths.learn.c_str()));
+            if (built.learningOpened) learningReopens_++;
+        }
     }
     return old;
 }
