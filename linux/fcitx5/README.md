@@ -49,7 +49,9 @@ otherwise they type Zhuyin. A page holds nine items, so `;` is spare.
 - Applications that do not report surrounding text give the first word of a composition no left context.
 - Page Up and Page Down page the open candidate window; in any other state, or with a modifier, they
   go to the application and the composition stays open (on macOS they commit it first).
-- Without Accelerate the semantic rerank of a short sentence takes about 100 ms here, the same as
-  Enter's wait for it, so an Enter pressed right after the last key may send the uncorrected text.
+- The semantic rerank uses the core's portable path, not Accelerate. On x86-64 with AVX2 or AVX-512 it
+  takes about 30 ms for a short sentence (well inside Enter's 100 ms wait for it); other CPUs, such as
+  64-bit ARM, run the scalar kernel and are slower, so there an Enter pressed right after the last key
+  may send the uncorrected text.
 - Changing the keyboard layout or a word pack blocks fcitx5 for about a second while the engine rebuilds.
 - No single-Shift English toggle, no automatic chat/formal choice per application.

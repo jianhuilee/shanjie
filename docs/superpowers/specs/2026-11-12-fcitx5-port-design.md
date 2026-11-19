@@ -307,9 +307,10 @@ has ten keys and a page nine items, so `;` never has an item and is eaten.
 ## 8. Known limitations
 
 - Vertical candidate window only.
-- The rerank runs on the core's plain (non-Accelerate) path: about 100 ms for a short sentence on the
-  development machine, the same as Enter's wait, so an Enter right after the last key can send the
-  uncorrected text.
+- The rerank runs on the core's plain (non-Accelerate) path. With its AVX2 and AVX-512 kernels a
+  short sentence takes about 30 ms on the development machine (median 28 ms, slowest 37 ms over 245
+  sentences), well inside Enter's 100 ms wait. CPUs without them (the scalar kernel, e.g. 64-bit ARM)
+  are slower and unmeasured; there an Enter right after the last key can send the uncorrected text.
 - Super+Backspace for forgetting may be taken by the compositor.
 - Without surrounding-text support in the application there is no left context, so the first word of a
   composition is decoded as a sentence start.
