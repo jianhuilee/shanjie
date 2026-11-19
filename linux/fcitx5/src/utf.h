@@ -19,8 +19,8 @@ std::string textBefore(std::string_view text, uint32_t cursorChars, uint32_t max
 std::string trailingHan(std::string_view text);
 
 // What the shell may hand the core as left context (shanjie.h, set_left_context): the text before the
-// cursor, at most `maxChars` characters; in a terminal only its trailing Han characters, so commands
-// and their output never reach the core.
+// cursor on the same line (after the last line break or NUL), at most `maxChars` characters; in a
+// terminal only its trailing Han characters, so commands and their output never reach the core.
 std::string leftContextFor(std::string_view text, uint32_t cursorChars, uint32_t maxChars, bool terminal);
 
 } // namespace shanjie

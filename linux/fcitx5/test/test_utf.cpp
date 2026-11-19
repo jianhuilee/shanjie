@@ -46,5 +46,18 @@ int main() {
     CHECK(leftContextFor(shell, 99, 64, true) == nihao);
     CHECK(leftContextFor("user@host:~$ make", 99, 64, true).empty());
     CHECK(leftContextFor(nihao + " ok", 2, 64, true) == nihao); // the cursor is right after the Han run
+
+    // Only the same line: the context starts after the last line break or NUL before the cursor.
+    CHECK(leftContextFor("first line\n" + nihao, 99, 64, false) == nihao);
+    CHECK(leftContextFor("a\r\nb", 99, 64, false) == "b");
+    CHECK(leftContextFor("a\rb", 99, 64, false) == "b");
+    CHECK(leftContextFor(std::string("a\0b", 3), 99, 64, false) == "b");
+    CHECK(leftContextFor("a\xe2\x80\xa8" "b", 99, 64, false) == "b"); // U+2028 LINE SEPARATOR
+    CHECK(leftContextFor("a\xe2\x80\xa9" "b", 99, 64, false) == "b"); // U+2029 PARAGRAPH SEPARATOR
+    CHECK(leftContextFor("a\xc2\x85" "b", 99, 64, false) == "b");     // U+0085 NEXT LINE
+    CHECK(leftContextFor("a\x0b" "b\x0c" "c", 99, 64, false) == "c");  // vertical tab, form feed
+    CHECK(leftContextFor("line\n", 99, 64, false).empty());           // the cursor starts a new line
+    CHECK(leftContextFor("one\ntwo\nthree", 7, 64, false) == "two");  // the line the cursor is on
+    CHECK(leftContextFor(nihao + "\n" + nihao, 99, 64, true) == nihao);
     TEST_MAIN_END();
 }

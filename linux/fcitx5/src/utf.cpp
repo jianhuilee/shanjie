@@ -89,8 +89,30 @@ std::string trailingHan(std::string_view text) {
     return std::string(text.substr(start));
 }
 
+namespace {
+
+// Swift's Character.isNewline (the macOS shell's rule, macos/Sources/ShanjieKit/Learning.swift) plus NUL.
+bool isLineBreak(uint32_t c) {
+    return c == 0x0A || c == 0x0B || c == 0x0C || c == 0x0D || c == 0x85 || c == 0x2028 || c == 0x2029 || c == 0;
+}
+
+// The part of `text` after its last line break or NUL (a NUL is a break, not deleted: 中\0文 must not become 中文).
+std::string_view lineTail(std::string_view text) {
+    size_t start = 0;
+    size_t i = 0;
+    while (i < text.size()) {
+        size_t len = 1;
+        const uint32_t cp = decodeAt(text, i, len);
+        i += len;
+        if (isLineBreak(cp)) start = i;
+    }
+    return text.substr(start);
+}
+
+} // namespace
+
 std::string leftContextFor(std::string_view text, uint32_t cursorChars, uint32_t maxChars, bool terminal) {
-    std::string before = textBefore(text, cursorChars, maxChars);
+    const std::string before = std::string(lineTail(textBefore(text, cursorChars, maxChars)));
     return terminal ? trailingHan(before) : before;
 }
 

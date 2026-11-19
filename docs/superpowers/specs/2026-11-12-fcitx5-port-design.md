@@ -199,7 +199,8 @@ main thread.
   call `set_left_context`; translate; a key outside the table commits an open composition with
   `reset(0)` and passes through; otherwise `shanjie_engine_key` and apply.
 - **Left context**: when the context supports surrounding text and it is valid, the text before the
-  cursor, at most 64 characters; otherwise none. In a terminal (fcitx5's `Terminal` capability) the
+  cursor on the same line (after the last line break or NUL, the macOS shell's rule), at most 64
+  characters; otherwise none. In a terminal (fcitx5's `Terminal` capability) the
   surrounding text is commands and their output, so only the run of Han characters right before the
   cursor is passed on, as the C ABI requires (`shanjie.h`, `set_left_context`); the Han ranges are the
   core's (`core/src/learn.rs`, `is_han`).

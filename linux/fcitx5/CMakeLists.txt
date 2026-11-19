@@ -57,7 +57,7 @@ install(FILES src/shanjie-im.conf RENAME shanjie.conf DESTINATION "${FCITX_INSTA
 
 # The files the core reads from its data directory (docs/spec/c-abi.md §8).
 set(LEXICON_FILES mcbpmf-data.txt overlay-add.tsv sandhi-add.tsv names-add.tsv variant-order.tsv
-    demote.tsv rerank-protect.tsv std-exempt.tsv digits.tsv mixed-words.tsv)
+    demote.tsv rerank-protect.tsv std-exempt.tsv digits.tsv mixed-words.tsv english.tsv)
 list(TRANSFORM LEXICON_FILES PREPEND "${REPO_ROOT}/data/lexicon/")
 install(FILES ${LEXICON_FILES} DESTINATION "${FCITX_INSTALL_PKGDATADIR}/shanjie/lexicon")
 
