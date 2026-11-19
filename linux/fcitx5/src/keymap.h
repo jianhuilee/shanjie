@@ -21,6 +21,9 @@ enum Mod : uint32_t { ModShift = 1, ModControl = 2, ModAlt = 4, ModSuper = 8, Mo
 struct KeyInput {
     uint32_t evdev = 0;
     bool shift = false, ctrl = false, alt = false, super = false, caps = false;
+    // The key is itself a modifier (Shift, Control, AltGr ...), whatever its code; the adapter knows it
+    // from the keysym when the frontend gives no keycode.
+    bool modifier = false;
 };
 
 uint32_t modifierBits(const KeyInput &in);

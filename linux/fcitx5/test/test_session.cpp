@@ -256,6 +256,46 @@ int main() {
         CHECK(c.preedit.empty() && c.commits.empty() && c.preeditSets == sets); // jobs were cancelled
     }
     {
+        // The preedit changes place (inline on or off): it leaves the old place before the flags change and
+        // comes back, unchanged, in the new one; nothing is committed.
+        FakeClient c;
+        press(s, c, {KS, KU, K3});
+        const std::string shown = c.preedit;
+        const size_t cursor = c.cursor;
+        CHECK(!shown.empty());
+        s.preeditMoving(c);
+        CHECK(c.preedit.empty() && c.preeditClears == 1);
+        s.preeditMoved(c);
+        CHECK(c.preedit == shown && c.cursor == cursor && c.commits.empty());
+        // Not the owner, or nothing composed: untouched.
+        FakeClient other;
+        s.preeditMoving(other);
+        s.preeditMoved(other);
+        CHECK(other.preeditClears == 0 && other.preeditSets == 0);
+        s.finish(c, false);
+        const int sets = c.preeditSets, clears = c.preeditClears;
+        s.preeditMoving(c);
+        s.preeditMoved(c);
+        CHECK(c.preeditSets == sets && c.preeditClears == clears);
+    }
+    {
+        // A modifier the frontend gave no keycode for (evdev 0) does not end the composition.
+        FakeClient c;
+        press(s, c, {KS, KU, K3});
+        const std::string shown = c.preedit;
+        KeyInput shift;
+        shift.modifier = true;
+        shift.shift = true;
+        CHECK(!s.handleKey(c, shift));
+        CHECK(c.preedit == shown && c.commits.empty());
+        // AltGr (Mod5) arrives as Option: the core passes the key through and keeps the composition.
+        KeyInput altGrQ = key(16);
+        altGrQ.alt = true;
+        CHECK(!s.handleKey(c, altGrQ));
+        CHECK(c.preedit == shown && c.commits.empty());
+        s.finish(c, false);
+    }
+    {
         FakeClient a, b;
         press(s, a, {KS, KU, K3});
         a.password = true;

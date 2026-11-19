@@ -68,6 +68,10 @@ linux/fcitx5/
 | Models (`data/lm`) | `fcitx5/shanjie/lm/` in the user data directory, else the system one |
 | Learning file | `fcitx5/shanjie/learn/` in the user data directory, created 0700 by the core |
 | Settings | `fcitx5/conf/shanjie.conf` in the user config directory |
+| Licenses and attribution | `${datadir}/fcitx5/shanjie/LICENSES/`: `LICENSE`, `data.md`, `McBopomofo-MIT.txt`, `name-suggestion-index-BSD-3-Clause.txt`, `CC-BY-SA-4.0-attribution.txt` (the app's text, taken from `scripts/build-app.sh` at configure time) and, with the models, `colloquial-attribution.tsv` |
+
+fcitx5 5.1.13 or later is required: it is the first release with `fcitx-utils/standardpaths.h`; every
+other API the addon uses is older. CMake, the addon entry (`core:5.1.13`) and the READMEs say so.
 
 All lookups go through fcitx5's standard path API. The documented install is system-wide; fcitx5 only
 loads addon libraries from its own library directory unless `FCITX_ADDON_DIRS` is set. The build
@@ -95,7 +99,10 @@ Turns a physical keycode and modifier state into a `ShanjieKey`, or reports "not
   application and the composition is left exactly as it is, which is what the core does with these keys
   when it is not showing a vertical window. They do not take the "outside the table" path, so they do
   not commit. The macOS shell commits here; this shell deliberately does not.
-- Modifiers: Shift bit 0, Control bit 1, Alt bit 2, Super bit 3, Caps Lock bit 4. "Forget this word" is
+- Modifiers: Shift bit 0, Control bit 1, Alt bit 2, Super bit 3, Caps Lock bit 4. AltGr (fcitx5's
+  `Mod5`, how layouts report their level-3 characters) is sent as Alt, the core's Option: such a key is
+  the layout's character, not the physical key's Zhuyin symbol, and the core passes Option keys through
+  without touching the composition (rule 1), as macOS does with its level-3 key. "Forget this word" is
   therefore Super+Backspace. A compositor that grabs Super combinations will hide it; that is a known
   limitation of the first version.
 - Key releases are never translated.
@@ -103,7 +110,10 @@ Turns a physical keycode and modifier state into a `ShanjieKey`, or reports "not
   `keymap` is called. fcitx5 reports the X keycode, which is the evdev code plus 8 (its Wayland and X11
   frontends both do), so the adapter subtracts 8. A key event with no keycode (0, or any value below 8)
   falls back to the keysym read as a US layout; a keysym that maps to no key gives evdev 0, which
-  `keymap` treats as outside its tables. `keymap` itself only ever sees evdev codes. This is tested with
+  `keymap` treats as outside its tables. A modifier keysym (fcitx5's `Key::isModifier`, plus Caps Lock,
+  Shift Lock, the level-3 and level-5 shifts and Mode_switch) is marked as a modifier whatever its code,
+  so a frontend without keycodes cannot turn a Shift press into an "outside the table" commit. `keymap`
+  itself only ever sees evdev codes. This is tested with
   real `fcitx::Key` values (`test_fcitx_key`), not only with the evdev table.
 
 ### 4.2 `utf`
@@ -199,7 +209,8 @@ main thread.
   call `set_left_context`; translate; a key outside the table commits an open composition with
   `reset(0)` and passes through; otherwise `shanjie_engine_key` and apply.
 - **Left context**: when the context supports surrounding text and it is valid, the text before the
-  cursor on the same line (after the last line break or NUL, the macOS shell's rule), at most 64
+  insertion point (the start of the selection, whichever way it was made, since the selection is about
+  to be replaced) on the same line (after the last line break or NUL, the macOS shell's rule), at most 64
   characters; otherwise none. In a terminal (fcitx5's `Terminal` capability) the
   surrounding text is commands and their output, so only the run of Han characters right before the
   cursor is passed on, as the C ABI requires (`shanjie.h`, `set_left_context`); the Han ranges are the
@@ -216,6 +227,13 @@ main thread.
   fcitx5 event objects (`test_fcitx_policy`). The adapter also watches fcitx5's capability-changed event,
   so a field that becomes sensitive while it owns a composition loses it at once and its pending rerank
   jobs are cancelled.
+- **Inline preedit turned on or off** (fcitx5's embedded-preedit toggle, or the application changing
+  its Preedit flag) while a composition is open: the preedit must change place, or the old place keeps
+  a copy and focus-out commits it twice (off) or not at all (on). On the capability-about-to-change event,
+  while the old flags still apply, the session takes the owner's preedit out of its old place
+  (`InputContext::updatePreedit` sends nothing to the application once the Preedit flag is gone); on the
+  capability-changed event it puts the same preedit into the new place. `fcitx_policy.h`
+  (`preeditMoves`) decides from the event whether the Preedit flag changed.
 
 ## 5. Applying an output
 

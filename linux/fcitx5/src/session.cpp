@@ -32,7 +32,7 @@ void Session::claim(Client &client) {
 bool Session::handleKey(Client &client, const KeyInput &in) {
     if (!engine_.ready()) return false;
     // A modifier pressed alone is not a key for the core and must not end the composition.
-    if (isModifierKey(in.evdev)) return false;
+    if (in.modifier || isModifierKey(in.evdev)) return false;
     claim(client);
     if (client.isPassword()) {
         finish(client, false);
@@ -119,6 +119,16 @@ void Session::finish(Client &client, bool commit) {
 
 void Session::capabilityChanged(Client &client) {
     if (owner_ == &client && client.isPassword()) finish(client, false);
+}
+
+void Session::preeditMoving(Client &client) {
+    if (owner_ == &client && lastPreedit_) client.clearPreedit();
+}
+
+void Session::preeditMoved(Client &client) {
+    if (owner_ != &client || !lastPreedit_) return;
+    const auto &[text, cursor, englishStart, englishEnd] = *lastPreedit_;
+    client.setPreedit(text, cursor, englishStart, englishEnd);
 }
 
 void Session::clientDestroyed(Client &client) {

@@ -53,5 +53,20 @@ int main() {
                              panelOnly));
     // Leaving a password field: the flags are still the password ones.
     CHECK(!commitOnDeactivate(CapabilityAboutToChangeEvent(nullptr, password, plain), password));
+
+    // The preedit changes place only when the Preedit flag itself changes.
+    CHECK(preeditMoves(CapabilityAboutToChangeEvent(nullptr, plain, panelOnly)));
+    CHECK(preeditMoves(CapabilityChangedEvent(nullptr, panelOnly, plain)));
+    CHECK(!preeditMoves(CapabilityAboutToChangeEvent(nullptr, plain, email)));
+    CHECK(!preeditMoves(CapabilityChangedEvent(nullptr, panelOnly, panelPassword)));
+
+    // The insertion point of a selection is its start, whichever way it was made.
+    SurroundingText st;
+    st.setText("abcdef", 4, 2); // cursor after "abcd", anchor after "ab": "cd" selected forwards
+    CHECK(insertionPoint(st) == 2);
+    st.setText("abcdef", 2, 4); // the same selection made backwards
+    CHECK(insertionPoint(st) == 2);
+    st.setText("abcdef", 3, 3); // no selection
+    CHECK(insertionPoint(st) == 3);
     TEST_MAIN_END();
 }

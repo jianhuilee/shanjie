@@ -61,7 +61,8 @@ private:
     EventDispatcher dispatcher_;                // before session_: outlives it
     std::unique_ptr<shanjie::Session> session_; // before factory_: outlives the per-context clients
     FactoryFor<ShanjieClient> factory_;
-    std::unique_ptr<HandlerTableEntry<EventHandler>> capabilityWatcher_; // last: removed first
+    std::unique_ptr<HandlerTableEntry<EventHandler>> capabilityAboutToChangeWatcher_; // last two: removed first
+    std::unique_ptr<HandlerTableEntry<EventHandler>> capabilityWatcher_;
 };
 
 class ShanjieFactory : public AddonFactory {

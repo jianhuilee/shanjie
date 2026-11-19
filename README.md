@@ -33,7 +33,7 @@ brew install --cask nanako0129/tap/shanjie
 
 Linux 版是 fcitx5 的輸入法外掛，和 macOS 版用同一個核心、同一份詞庫與模型，全部在本機執行。目前沒有預先建好的套件，要從原始碼建置；沒有自動更新。建置、設定與已知限制的細節見 [`linux/fcitx5/README.md`](linux/fcitx5/README.md)。
 
-**需要**：fcitx5 5.1 以上與它的開發套件、CMake 3.21 以上、支援 C++20 的編譯器、`CONTRIBUTING.md` 寫的 Rust 版本。Debian／Ubuntu：
+**需要**：fcitx5 5.1.13 以上與它的開發套件（Ubuntu 24.04 的 5.1.7 太舊）、CMake 3.21 以上、支援 C++20 的編譯器、`CONTRIBUTING.md` 寫的 Rust 版本。Debian／Ubuntu：
 
 ```sh
 sudo apt install fcitx5 fcitx5-config-qt libfcitx5core-dev cmake g++ curl

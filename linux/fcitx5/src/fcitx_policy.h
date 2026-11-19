@@ -1,6 +1,9 @@
 #pragma once
 #include <fcitx-utils/capabilityflags.h>
 #include <fcitx/event.h>
+#include <fcitx/surroundingtext.h>
+
+#include <algorithm>
 
 namespace fcitx {
 
@@ -30,5 +33,14 @@ inline bool commitOnDeactivate(const InputContextEvent &event, CapabilityFlags f
     // here too would insert the text twice. Commit only a preedit shown in the panel.
     return !flags.test(CapabilityFlag::Preedit);
 }
+
+// Whether a capability change moves the preedit between the application (inline) and fcitx5's panel.
+inline bool preeditMoves(const CapabilityEvent &event) {
+    return event.oldFlags().test(CapabilityFlag::Preedit) != event.newFlags().test(CapabilityFlag::Preedit);
+}
+
+// Where typed text goes in: the start of the selection, whichever way it was made, since the selected
+// text is about to be replaced. The left context is the text before this point.
+inline unsigned int insertionPoint(const SurroundingText &st) { return std::min(st.cursor(), st.anchor()); }
 
 } // namespace fcitx

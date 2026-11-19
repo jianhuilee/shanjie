@@ -4,7 +4,8 @@ An fcitx5 input method built on the Shanjie core. Design: `docs/superpowers/spec
 
 ## Requirements
 
-- fcitx5 5.1 with its development package (Debian and Ubuntu: `libfcitx5core-dev`)
+- fcitx5 5.1.13 or later with its development package (Debian and Ubuntu: `libfcitx5core-dev`; the 5.1.7
+  of Ubuntu 24.04 is too old)
 - CMake 3.21 or later, a C++20 compiler
 - The Rust toolchain named in `CONTRIBUTING.md`
 - The model files in `data/lm/` (download commands in `CONTRIBUTING.md`; the `curl` form needs no account)
@@ -31,6 +32,9 @@ and spelled out in the configure command above) does that. The configure step pr
 
 Then add "Shanjie Zhuyin" in the fcitx5 configuration tool. Settings are under the input method's
 configure button. The learning file is kept in `shanjie/learn` under fcitx5's user data directory.
+
+The licenses and attribution of the shipped data are installed in `shanjie/LICENSES` next to it
+(`data.md` lists every source).
 
 To update the models later, replace the files by rename, not by writing in place: the trigram tables
 are memory-mapped while fcitx5 runs.

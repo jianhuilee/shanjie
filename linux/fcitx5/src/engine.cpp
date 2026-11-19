@@ -110,7 +110,7 @@ std::optional<std::string> ShanjieClient::leftContext() const {
     // A terminal's surrounding text is commands and their output: only the trailing Han characters
     // may go to the core (shanjie.h, set_left_context).
     const bool terminal = ic_->capabilityFlags().test(CapabilityFlag::Terminal);
-    return shanjie::leftContextFor(st.text(), st.cursor(), kLeftContextChars, terminal);
+    return shanjie::leftContextFor(st.text(), insertionPoint(st), kLeftContextChars, terminal);
 }
 
 // ---- ShanjieEngine
@@ -124,11 +124,22 @@ ShanjieEngine::ShanjieEngine(Instance *instance)
         [this](std::function<void()> f) { dispatcher_.schedule(std::move(f)); }, logCode);
     if (!session_->ready()) FCITX_ERROR() << "shanjie: no engine; every key is passed through";
     instance_->inputContextManager().registerProperty("shanjieClient", &factory_);
-    // A field can turn into a password or sensitive one while it holds the focus.
+    // Inline preedit turned on or off: the preedit leaves its old place while the old flags still hold
+    // (InputContext::updatePreedit sends nothing once the Preedit flag is gone) ...
+    capabilityAboutToChangeWatcher_ = instance_->watchEvent(
+        EventType::InputContextCapabilityAboutToChange, EventWatcherPhase::Default, [this](Event &event) {
+            auto &capEvent = static_cast<CapabilityEvent &>(event);
+            if (preeditMoves(capEvent))
+                session_->preeditMoving(*capEvent.inputContext()->propertyFor(&factory_));
+        });
+    // ... and comes back in the new one. A field can also turn into a password or sensitive one while it
+    // holds the focus; then the composition is dropped instead.
     capabilityWatcher_ = instance_->watchEvent(
         EventType::InputContextCapabilityChanged, EventWatcherPhase::Default, [this](Event &event) {
-            auto &icEvent = static_cast<InputContextEvent &>(event);
-            session_->capabilityChanged(*icEvent.inputContext()->propertyFor(&factory_));
+            auto &capEvent = static_cast<CapabilityEvent &>(event);
+            auto &client = *capEvent.inputContext()->propertyFor(&factory_);
+            session_->capabilityChanged(client);
+            if (preeditMoves(capEvent)) session_->preeditMoved(client);
         });
 }
 

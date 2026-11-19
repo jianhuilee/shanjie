@@ -51,6 +51,12 @@ public:
     // `client`'s field changed kind. If it became a password or sensitive field while it owns a
     // composition, the composition is dropped and pending rerank jobs are cancelled.
     void capabilityChanged(Client &client);
+    // The preedit changes place (inline in the application, or in fcitx5's panel). preeditMoving is
+    // called while the old place still applies and takes the owner's preedit out of it; preeditMoved puts
+    // it back, unchanged, in the new place. Otherwise the old place would keep a copy, and focus-out
+    // would commit it twice or not at all.
+    void preeditMoving(Client &client);
+    void preeditMoved(Client &client);
     // `client` is going away; drops a composition it owns.
     void clientDestroyed(Client &client);
     // Commits an open composition, then rebuilds the engine or resends the settings.

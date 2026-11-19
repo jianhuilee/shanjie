@@ -48,5 +48,22 @@ int main() {
     // No keycode and a keysym with no key: outside the tables.
     CHECK(!translate(toKeyInput(Key(FcitxKey_F1, KeyStates(), 0))));
     CHECK(!translate(toKeyInput(Key(FcitxKey_None, KeyStates(), 0))));
+
+    // A modifier with no keycode is still a modifier: it must not reach the session as an unknown key.
+    for (KeySym sym : {FcitxKey_Shift_L, FcitxKey_Shift_R, FcitxKey_Control_L, FcitxKey_Control_R, FcitxKey_Alt_L,
+                       FcitxKey_Alt_R, FcitxKey_Super_L, FcitxKey_Super_R, FcitxKey_ISO_Level3_Shift,
+                       FcitxKey_Caps_Lock}) {
+        CHECK(toKeyInput(Key(sym, KeyStates(), 0)).modifier);
+    }
+    CHECK(toKeyInput(Key(FcitxKey_Shift_L, KeyStates(), 50)).modifier);
+    CHECK(!toKeyInput(Key(FcitxKey_s, KeyStates(), 39)).modifier);
+    CHECK(!toKeyInput(Key(FcitxKey_S, KeyStates(KeyState::Shift), 0)).modifier);
+
+    // AltGr: the layout reports its level-3 characters with Mod5. The physical Q (evdev 16, X 24) with
+    // Mod5 is `@` on such a layout; it goes to the core as Option, which passes it through.
+    auto altGr = translate(toKeyInput(Key(FcitxKey_at, KeyStates(KeyState::Mod5), 24)));
+    CHECK(altGr && altGr->ch == 'q' && (altGr->modifiers & ModAlt));
+    auto altGrNoCode = translate(toKeyInput(Key(FcitxKey_at, KeyStates(KeyState::Mod5), 0)));
+    CHECK(altGrNoCode && (altGrNoCode->modifiers & ModAlt));
     TEST_MAIN_END();
 }

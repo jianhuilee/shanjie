@@ -42,7 +42,8 @@ target_link_libraries(shanjie_shell PUBLIC shanjie_core)
 # (/usr/local) would install a library fcitx5 never finds. Defined before find_package so that it is the
 # default; pass -DFCITX_INSTALL_USE_FCITX_SYS_PATHS=OFF with FCITX_ADDON_DIRS set for a private install.
 option(FCITX_INSTALL_USE_FCITX_SYS_PATHS "Install into the directories fcitx5 itself uses" ON)
-find_package(Fcitx5Core 5.1 REQUIRED)
+# 5.1.13: the first release with fcitx-utils/standardpaths.h (StandardPaths); every other API used is older.
+find_package(Fcitx5Core 5.1.13 REQUIRED)
 message(STATUS "Shanjie addon library goes to ${FCITX_INSTALL_ADDONDIR}")
 add_library(shanjie MODULE
     src/candidates.cpp
@@ -70,9 +71,37 @@ set(MODEL_FILES bigram.sjlm classes.sjc kn.sjkn tinylm.sjtl trigram.sjt3 trigram
 list(TRANSFORM MODEL_FILES PREPEND "${REPO_ROOT}/data/lm/")
 if(EXISTS "${REPO_ROOT}/data/lm/bigram.sjlm")
     install(FILES ${MODEL_FILES} DESTINATION "${FCITX_INSTALL_PKGDATADIR}/shanjie/lm")
+    # The per-source credits of the colloquial table's public sentences go with it (docs/spec/semantic-rerank.md §4.7).
+    install(FILES "${REPO_ROOT}/data/lm/colloquial-attribution.tsv" DESTINATION "${FCITX_INSTALL_PKGDATADIR}/shanjie/LICENSES")
 else()
     message(WARNING "data/lm/bigram.sjlm not found: models will not be installed (see CONTRIBUTING.md)")
 endif()
+
+# Licenses and attribution of the data shipped above, as the macOS app carries them (scripts/build-app.sh;
+# the list of every source is LICENSES/data.md). The CC BY-SA attribution text is taken from the app
+# script's heredoc, so the two packagings cannot drift apart. Sparkle is macOS-only and not installed.
+set(BUILD_APP "${REPO_ROOT}/scripts/build-app.sh")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${BUILD_APP}")
+file(READ "${BUILD_APP}" BUILD_APP_TEXT)
+string(FIND "${BUILD_APP_TEXT}" "CC-BY-SA-4.0-attribution.txt\" <<'EOF'\n" ATTR_AT)
+if(ATTR_AT EQUAL -1)
+    message(FATAL_ERROR "scripts/build-app.sh no longer writes CC-BY-SA-4.0-attribution.txt from a heredoc")
+endif()
+string(SUBSTRING "${BUILD_APP_TEXT}" ${ATTR_AT} -1 ATTR_TEXT)
+string(FIND "${ATTR_TEXT}" "\n" ATTR_START)
+math(EXPR ATTR_START "${ATTR_START} + 1")
+string(SUBSTRING "${ATTR_TEXT}" ${ATTR_START} -1 ATTR_TEXT)
+string(FIND "${ATTR_TEXT}" "\nEOF\n" ATTR_END)
+if(ATTR_END EQUAL -1)
+    message(FATAL_ERROR "scripts/build-app.sh: the attribution heredoc has no end")
+endif()
+math(EXPR ATTR_END "${ATTR_END} + 1")
+string(SUBSTRING "${ATTR_TEXT}" 0 ${ATTR_END} ATTR_TEXT)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/CC-BY-SA-4.0-attribution.txt" "${ATTR_TEXT}")
+install(FILES "${REPO_ROOT}/LICENSE" "${REPO_ROOT}/LICENSES/data.md" "${REPO_ROOT}/LICENSES/McBopomofo-MIT.txt"
+              "${REPO_ROOT}/LICENSES/name-suggestion-index-BSD-3-Clause.txt"
+              "${CMAKE_CURRENT_BINARY_DIR}/CC-BY-SA-4.0-attribution.txt"
+        DESTINATION "${FCITX_INSTALL_PKGDATADIR}/shanjie/LICENSES")
 
 # --- Tests
 enable_testing()
@@ -97,3 +126,8 @@ shanjie_test(test_rerank_runner shanjie_shell)
 shanjie_test(test_session shanjie_shell)
 shanjie_test(test_fcitx_key shanjie_shell Fcitx5::Utils)
 shanjie_test(test_fcitx_policy shanjie_shell Fcitx5::Core)
+
+# The install manifest: installs into a scratch DESTDIR and checks the data and its licenses are there.
+add_test(NAME test_install_manifest
+         COMMAND ${CMAKE_COMMAND} -DBUILD_DIR=${CMAKE_BINARY_DIR} -DPKGDATA=${FCITX_INSTALL_PKGDATADIR}
+                 -DREPO_ROOT=${REPO_ROOT} -P ${CMAKE_CURRENT_SOURCE_DIR}/test/check_install.cmake)
